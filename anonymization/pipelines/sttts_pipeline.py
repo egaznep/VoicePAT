@@ -179,7 +179,7 @@ class STTTSPipeline:
             logging.info("--- Synthesis time: %f min ---" % (float(time.time() - start_time) / 60))
 
             anon_wav_scps[dataset_name] = wav_scp
-            logger.info("Anonymization pipeline completed.")
+        logger.info("Anonymization pipeline completed.")
 
         if prepare_results:
             logger.info("Preparing results according to the Kaldi format.")
