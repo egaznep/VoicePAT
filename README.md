@@ -29,7 +29,6 @@ VoicePAT is a toolkit for speaker anonymization research. It is based on the fra
 Requires `conda` for environment management. Installation of `mamba` is also recommended for speeding up the environment-related tasks. Simply clone the repository and run the following commands, a conda environment will be generated in the project root folder and the pretrained models will be downloaded.
 
 ```bash
-sudo apt install libespeak-ng   # alternatively use your own package manager
 make install pretrained_models  
 ```
 
