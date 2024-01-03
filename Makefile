@@ -22,6 +22,8 @@ install: $(ENV_NAME) ## performs the installation. Currently the only step is to
 uninstall:
 	@rm -rf $(ENV_NAME)
 	@rm -rf models/
+	@rm -rf evaluation/utility/asr/exp
+	@rm -rf exp
 
 pretrained_models: ## downloads the pretrained models from IMS repositories
 	@echo Downloading models from IMS repositories
@@ -34,10 +36,9 @@ pretrained_models: ## downloads the pretrained models from IMS repositories
 	@unzip -oq models/asr.zip -d models
 	@unzip -oq models/tts.zip -d models
 	@unzip -oq models/anonymization.zip -d models
-	@mkdir evaluation/utility/asr/exp
+	@mkdir -p evaluation/utility/asr/exp
 	@unzip -oq models/pre_eval_models.zip -d evaluation/utility/asr/exp
 	@ln -srf evaluation/utility/asr/exp exp
-	@cp evaluation/privacy/asv/
 	@rm models/*.zip
 
 
