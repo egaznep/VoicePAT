@@ -18,3 +18,7 @@
     set: test
     enrolls: [enrolls]
     trials: [trials_f_all, trials_m_all]
+  - name: train-clean-360 # can be removed if not training ASV_eval/ASR_eval
+    data: train-clean-360
+    enrolls: []
+    trials: []

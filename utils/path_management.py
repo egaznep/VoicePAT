@@ -45,16 +45,18 @@ def find_asv_model_checkpoint(model_dir):
 
 def get_datasets(config):
     datasets = {}
-    data_dir = config.get('data_dir', None).expanduser() # if '~' is given in path then manually expand
+    data_dir = config.get('data_dir', Path('')).expanduser() # if '~' is given in path then manually expand
     for dataset in config['datasets']:
-        if data_dir:
+        subsets = dataset['enrolls'] + dataset['trials']
+        if len(subsets):
             for subset in dataset['enrolls'] + dataset['trials']:
                 dataset_name = f'{dataset["data"]}_{dataset["set"]}_{subset}'
                 datasets[dataset_name] = Path(data_dir, dataset_name)
         else:
-            dataset_path = Path(dataset['name'])
-            for subset in dataset['enrolls'] + dataset['trials']:
-                dataset_name = f'{dataset_path.name}_{subset}'
-                datasets[dataset_name] = dataset_path
+            dataset_name = f'{dataset["data"]}'
+            datasets[dataset_name] = Path(data_dir, dataset_name)
+    # ensure their existence
+    for dataset, dataset_path in datasets.items():
+        assert dataset_path.exists(), f'Dataset {dataset} is not found in {dataset_path.absolute()}'
     return datasets
 

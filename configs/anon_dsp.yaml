@@ -1,32 +1,10 @@
-root_dir : ..
-data_dir: !ref data  # TODO adjust path
+root_dir : !PLACEHOLDER # TODO adjust path
+data_dir: !PLACEHOLDER  # TODO adjust path
 save_output: true
 
-datasets:
-  - name: libri_dev
-    data: libri
-    set: dev
-    enrolls: [enrolls]
-    trials: [trials_f, trials_m]
-  - name: libri_test
-    data: libri
-    set: test
-    enrolls: [enrolls]
-    trials: [trials_f, trials_m]
-  - name: vctk_dev
-    data: vctk
-    set: dev
-    enrolls: [enrolls]
-    trials: [trials_f_all, trials_m_all]
-  - name: vctk_test
-    data: vctk
-    set: test
-    enrolls: [enrolls]
-    trials: [trials_f_all, trials_m_all]
+datasets: !include:datasets_vpc2022_official_anon.yaml
 
-
-dataset_libri_360: !ref <data_dir>/train-clean-360-asv
-results_dir: !ref results # TODO adjust path
+results_dir: !PLACEHOLDER # TODO adjust path
 pipeline: dsp
 
 modules:

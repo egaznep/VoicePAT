@@ -4,22 +4,24 @@ from argparse import ArgumentParser
 import torch
 
 from anonymization.pipelines.sttts_pipeline import STTTSPipeline
+from anonymization.pipelines.dsp_pipeline import DSPPipeline
+
 from utils import parse_yaml, get_datasets
 
 PIPELINES = {
-    'sttts': STTTSPipeline
+    'sttts': STTTSPipeline,
+    'dsp': DSPPipeline,
 }
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--config', default='anon_config.yaml')
+    parser.add_argument('--config', default='configs/anon_config.yaml')
     parser.add_argument('--gpu_ids', default='0')
     parser.add_argument('--force_compute', default=False, type=bool)
     args = parser.parse_args()
 
-    config = parse_yaml(Path('configs', args.config))
-    # datasets = get_datasets(config)
-    datasets = {'train-clean-360': Path(config['data_dir'], 'train-clean-360')}
+    config = parse_yaml(Path(args.config))
+    datasets = get_datasets(config)
 
     gpus = args.gpu_ids.split(',')
 
