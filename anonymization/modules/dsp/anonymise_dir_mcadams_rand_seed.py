@@ -7,6 +7,7 @@ modified version (N.T.)
 """
 import os
 import librosa
+import logging
 import numpy as np
 import scipy
 import wave
@@ -16,6 +17,11 @@ import matplotlib.pyplot as plt
 import random
 from kaldiio import ReadHelper
 import shutil
+from tqdm import tqdm
+
+
+logger = logging.getLogger(__name__)
+
 
 def load_utt2spk(path):
     assert os.path.isfile(path), f'File does not exist {path}'
@@ -24,7 +30,7 @@ def load_utt2spk(path):
     return utt2spk
 
 def process_data(dataset_path, anon_level, settings):
-
+    rng = np.random.default_rng(2024)
     utt2spk = None
     if anon_level == 'spk':
         utt2spk = load_utt2spk( dataset_path / 'utt2spk')
@@ -39,20 +45,20 @@ def process_data(dataset_path, anon_level, settings):
     path_wav_scp_out = output_path / 'wav.scp'
     with open(path_wav_scp_out, 'wt', encoding='utf-8') as writer:
         with ReadHelper(f'scp:{wav_scp}') as reader:
-            print(reader)
-            for utid, (freq, samples) in reader:
-                print(utid)
+            for utid, (freq, samples) in tqdm(list(reader)):
                 output_file = os.path.join(output_path / 'wav', f'{utid}.wav')
-                print(output_file)
                 if os.path.exists(output_file):
-                    print('file already exists')
+                    logger.warn(f'File {output_file} already exists')
                     continue
                 samples = samples / (np.iinfo(np.int16).max + 1)
                 if anon_level == 'spk':
                     assert utid in utt2spk, f'Failed to find speaker ID for utterance {utid}'
                     spid = utt2spk[utid]
-                    random.seed(np.abs(hash(spid)))
-                rand_mc_coeff = random.uniform(settings['mc_coeff_min'], settings['mc_coeff_max'])
+                    # make sure same generator is used for each utterance if
+                    # spk-level anonymization is used
+                    rng = np.random.default_rng(np.abs(hash(spid)))
+
+                rand_mc_coeff = rng.uniform(settings['mc_coeff_min'], settings['mc_coeff_max'])
                
                 samples = anonym(freq=freq, samples=samples, 
                     winLengthinms=settings['winLengthinms'],
@@ -64,13 +70,10 @@ def process_data(dataset_path, anon_level, settings):
                     stream.setnchannels(1)
                     stream.setsampwidth(2)
                     stream.writeframes(samples)
-                print(f'{utid} {output_file}', file=writer)
-    print('Done')
+                logger.debug(f'{utid} {output_file}', file=writer)
 
 def anonym(freq, samples, winLengthinms=20, shiftLengthinms=10, lp_order=20, mcadams=0.8):
-
-
-    print(mcadams)
+    logger.debug(f'Anonymizing with McAdams coefficient {mcadams}')
     eps = np.finfo(np.float32).eps
     samples = samples + eps
     
