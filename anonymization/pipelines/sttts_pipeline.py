@@ -2,6 +2,7 @@ from pathlib import Path
 from datetime import datetime
 import logging
 import time
+import typing
 
 from anonymization.modules import (
     SpeechRecognition,
@@ -11,12 +12,13 @@ from anonymization.modules import (
     SpeakerExtraction,
     SpeakerAnonymization,
 )
-import typing
+from .base_pipeline import BasePipeline
 from utils import prepare_evaluation_data, save_yaml
 
 logger = logging.getLogger(__name__)
 
-class STTTSPipeline:
+
+class STTTSPipeline(BasePipeline):
     def __init__(self, config: dict, force_compute: bool, devices: list):
         """
         Instantiates a STTTSPipeline with the complete feature extraction,
@@ -100,16 +102,20 @@ class STTTSPipeline:
         prepare_results: bool = True,
     ):
         """
-            Runs the anonymization algorithm on the given datasets. Optionally
-            prepares the results such that the evaluation pipeline
-            can interpret them.
+        Runs the anonymization pipeline on the given datasets. Optionally
+        prepares the results such that the evaluation pipeline
+        can interpret them.
 
-            Args:
-                datasets (dict of str -> Path): The datasets on which the
-                    anonymization pipeline should be runned on. These dataset
-                    will be processed sequentially.
-                prepare_results (bool): if True, the resulting anonymization
-                    .wavs are prepared for evaluation
+        Args:
+            datasets (dict of str -> Path): The datasets on which the
+                anonymization pipeline should be runned on. These dataset
+                will be processed sequentially. The dictionary should
+                contain the dataset name as key and the path to the dataset
+                as value.
+            prepare_results (bool): if True, the resulting anonymization
+                .wavs are prepared for evaluation. This means that the
+                output is written in the Kaldi format and the config is
+                saved. Defaults to True.
         """
         anon_wav_scps = {}
 
@@ -123,22 +129,35 @@ class STTTSPipeline:
                 dataset_path=dataset_path, dataset_name=dataset_name
             )
             start_time = time.time()
-            texts = self.speech_recognition.recognize_speech(dataset_path=dataset_path, dataset_name=dataset_name)
-            logging.info("--- Speech recognition time: %f min ---" % (float(time.time() - start_time) / 60))
+            texts = self.speech_recognition.recognize_speech(
+                dataset_path=dataset_path, dataset_name=dataset_name
+            )
+            logging.info(
+                "--- Speech recognition time: %f min ---"
+                % (float(time.time() - start_time) / 60)
+            )
 
             start_time = time.time()
-            spk_embeddings = self.speaker_extraction.extract_speakers(dataset_path=dataset_path,
-                                                                      dataset_name=dataset_name)
-            logging.info("--- Speaker extraction time: %f min ---" % (float(time.time() - start_time) / 60))
+            spk_embeddings = self.speaker_extraction.extract_speakers(
+                dataset_path=dataset_path, dataset_name=dataset_name
+            )
+            logging.info(
+                "--- Speaker extraction time: %f min ---"
+                % (float(time.time() - start_time) / 60)
+            )
 
             if self.prosody_extraction:
                 prosody = self.prosody_extraction.extract_prosody(
                     dataset_path=dataset_path, dataset_name=dataset_name, texts=texts
                 )
                 start_time = time.time()
-                prosody = self.prosody_extraction.extract_prosody(dataset_path=dataset_path, dataset_name=dataset_name,
-                                                                  texts=texts)
-                logging.info("--- Prosody extraction time: %f min ---" % (float(time.time() - start_time) / 60))
+                prosody = self.prosody_extraction.extract_prosody(
+                    dataset_path=dataset_path, dataset_name=dataset_name, texts=texts
+                )
+                logging.info(
+                    "--- Prosody extraction time: %f min ---"
+                    % (float(time.time() - start_time) / 60)
+                )
             else:
                 prosody = None
 
@@ -148,9 +167,13 @@ class STTTSPipeline:
             )
             if self.speaker_anonymization:
                 start_time = time.time()
-                anon_embeddings = self.speaker_anonymization.anonymize_embeddings(speaker_embeddings=spk_embeddings,
-                                                                                  dataset_name=dataset_name)
-                logging.info("--- Speaker anonymization time: %f min ---" % (float(time.time() - start_time) / 60))
+                anon_embeddings = self.speaker_anonymization.anonymize_embeddings(
+                    speaker_embeddings=spk_embeddings, dataset_name=dataset_name
+                )
+                logging.info(
+                    "--- Speaker anonymization time: %f min ---"
+                    % (float(time.time() - start_time) / 60)
+                )
             else:
                 anon_embeddings = spk_embeddings
 
@@ -159,8 +182,13 @@ class STTTSPipeline:
                     prosody=prosody
                 )
                 start_time = time.time()
-                anon_prosody = self.prosody_anonymization.anonymize_prosody(prosody=prosody)
-                logging.info("--- Prosody anonymization time: %f min ---" % (float(time.time() - start_time) / 60))
+                anon_prosody = self.prosody_anonymization.anonymize_prosody(
+                    prosody=prosody
+                )
+                logging.info(
+                    "--- Prosody anonymization time: %f min ---"
+                    % (float(time.time() - start_time) / 60)
+                )
             else:
                 anon_prosody = prosody
 
@@ -173,10 +201,17 @@ class STTTSPipeline:
                 emb_level=anon_embeddings.emb_level,
             )
             start_time = time.time()
-            wav_scp = self.speech_synthesis.synthesize_speech(dataset_name=dataset_name, texts=texts,
-                                                              speaker_embeddings=anon_embeddings,
-                                                              prosody=anon_prosody, emb_level=anon_embeddings.emb_level)
-            logging.info("--- Synthesis time: %f min ---" % (float(time.time() - start_time) / 60))
+            wav_scp = self.speech_synthesis.synthesize_speech(
+                dataset_name=dataset_name,
+                texts=texts,
+                speaker_embeddings=anon_embeddings,
+                prosody=anon_prosody,
+                emb_level=anon_embeddings.emb_level,
+            )
+            logging.info(
+                "--- Synthesis time: %f min ---"
+                % (float(time.time() - start_time) / 60)
+            )
 
             anon_wav_scps[dataset_name] = wav_scp
         logger.info("Anonymization pipeline completed.")
@@ -199,6 +234,9 @@ class STTTSPipeline:
                 self.config, self.results_dir / "formatted_data" / now / "config.yaml"
             )
 
-            logger.info("--- Total computation time: %f min ---" % (float(time.time() - self.total_start_time) / 60))
+            logger.info(
+                "--- Total computation time: %f min ---"
+                % (float(time.time() - self.total_start_time) / 60)
+            )
 
         return anon_wav_scps
