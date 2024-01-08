@@ -7,13 +7,16 @@ channels:
 dependencies:
   - pip
   - pip:
+    - speechbrain
     - git+https://github.com/speechbrain/HyperPyYAML.git # pip version has a bug
     - noisereduce
     - pyloudnorm
     - phonemizer
     - praat-parselmouth
+    - pypinyin
     - espnet
     - espnet_model_zoo
+    - git+https://github.com/gsaluja9/typer-cli.git # PyPI and conda versions have a bug
   - python
   - urllib3
   - matplotlib
@@ -29,11 +32,11 @@ dependencies:
   - scikit-learn
   - pyyaml
   - click
-  - typer
+  - typer==0.9.0
   - typer-cli
   - tqdm
   - openpyxl
-  - librosa
+  - librosa==0.9.2
   - resampy
   - python-sounddevice
   - pytorch::pytorch-cuda
@@ -47,3 +50,8 @@ dependencies:
   - typeguard==2.13.3
   - conda-build
   - torchvision # only to prevent warnings
+  - libflac
+  - numba==0.53
+  - ffmpeg
+  - pandas
+  

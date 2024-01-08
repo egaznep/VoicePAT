@@ -1,8 +1,8 @@
 ###############################
 ## CONFIGURATION
 ###############################
-PHONY: install uninstall pretrained_models
 .ONESHELL:
+PHONY: install uninstall pretrained_models
 
 PROJECT_NAME = voicepat
 ENV_NAME = $(PROJECT_NAME)_env
@@ -43,7 +43,8 @@ pretrained_models: ## downloads the pretrained models from IMS repositories
 
 
 $(ENV_NAME): environment.yaml
-	@($(CONDA) env create -f $< -p ./$@ && echo Installation complete, please run `conda develop .` once.) || $(CONDA) env update -f $< -p ./$@
+	@($(CONDA) env create -f $< -p ./$@) || $(CONDA) env update -f $< -p ./$@
+	@(. $(ENV_NAME)/bin/activate && conda develop .)
 	@conda config --set env_prompt '($$(basename {default_env})) '
 	@(cat .gitignore | grep -q $(ENV_NAME)) || echo $(ENV_NAME) >> .gitignore
 
