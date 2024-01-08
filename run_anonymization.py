@@ -36,6 +36,13 @@ def main(
             help="If given, forces re-computation of all steps. Otherwise uses saved results.",
         ),
     ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            '--verbose', '-v',
+            help="If given, sets logging level to DEBUG.",
+        ),
+    ] = False,
 ):
     config = parse_yaml(Path(config))
     datasets = get_datasets(config)
@@ -50,7 +57,7 @@ def main(
 
     with torch.no_grad():
         logging.basicConfig(
-            level=logging.INFO,
+            level=logging.DEBUG if verbose else logging.INFO,
             format="%(asctime)s - %(name)s- %(levelname)s - %(message)s",
         )
         logging.info(f'Running pipeline: {config["pipeline"]}')
