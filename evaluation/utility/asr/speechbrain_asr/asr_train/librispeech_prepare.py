@@ -7,7 +7,7 @@ Author
 ------
 Mirco Ravanelli, Ju-Chieh Chou, Loren Lugosch 2020
 """
-
+from pathlib import Path
 import os
 import csv
 import random
@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 OPT_FILE = "opt_librispeech_prepare.pkl"
 SAMPLERATE = 16000
 
-
 def prepare_librispeech(
     data_folder,
     save_folder,
@@ -40,6 +39,8 @@ def prepare_librispeech(
     merge_name=None,
     create_lexicon=False,
     skip_prep=False,
+    anon = False,
+
 ):
     """
     This class prepares the csv files for the LibriSpeech dataset.
@@ -116,12 +117,24 @@ def prepare_librispeech(
 
         split = splits[split_index]
 
-        wav_lst = get_all_files(
-            os.path.join(data_folder, split), match_and=[".flac"]
-        )
+        if anon:
+            SUFFIX = '.wav'
+        else:
+            SUFFIX = '.flac'
+        wav_file_temp = Path(data_folder + '/' + split + '/wav.scp')
+        
+        if wav_file_temp.exists():
+            logger.info(" %s/wav.scp exists, use wav.scp to create csv " % data_folder)
+            with open(wav_file_temp, 'r') as file:
+                wav_lst = [line.split()[1] for line in file]
+        else:
+            logger.info(" %s/wav.scp is not exist, find audio files under the folder to create csv " % data_folder)
+            wav_lst = get_all_files(
+            os.path.join(data_folder, split), match_and=[SUFFIX]
+            )
 
         text_lst = get_all_files(
-            os.path.join(data_folder, split), match_and=["trans.txt"]
+            os.path.join(data_folder, split), match_and=["text"]
         )
 
         text_dict = text_to_dict(text_lst)
@@ -272,7 +285,8 @@ class LSRow:
 
 
 def process_line(wav_file, text_dict) -> LSRow:
-    snt_id = wav_file.split("/")[-1].replace(".flac", "")
+    SUFFIX = '.' + wav_file.split(".")[-1]
+    snt_id = wav_file.split("/")[-1].replace(str(SUFFIX), "")
     spk_id = "-".join(snt_id.split("-")[0:2])
     wrds = text_dict[snt_id]
     wrds = " ".join(wrds.split("_"))
@@ -280,6 +294,7 @@ def process_line(wav_file, text_dict) -> LSRow:
     info = read_audio_info(wav_file)
     duration = info.num_frames / info.sample_rate
 
+    #print(snt_id,spk_id,wrds,info,duration)
     return LSRow(
         snt_id=snt_id,
         spk_id=spk_id,
@@ -330,14 +345,18 @@ def create_csv(
     # FLAC metadata reading is already fast, so we set a high chunk size
     # to limit main thread CPU bottlenecks
     for row in parallel_map(line_processor, wav_lst, chunk_size=8192):
+    #for wav_file in wav_lst:
+        #row = process_line(wav_file,text_dict)
         csv_line = [
             row.snt_id,
             str(row.duration),
             row.file_path,
             row.spk_id,
             row.words,
-        ]
+            ]
 
+
+        #print(row)
         # Appending current file to the csv_lines list
         csv_lines.append(csv_line)
 

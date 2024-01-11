@@ -52,22 +52,27 @@ def main(
         'libri_dev_trials_f',
         'libri_dev_trials_all',
         'libri_dev_enrolls',
+        'train-clean-360',
     ]
     for dataset in dataset_list:
         dataset_path = vpc_baseline_path / 'data' / dataset
         lines = []
         with open(dataset_path / 'wav.scp') as scp:
             for line in scp.readlines():
-                # scp format is {utt} {path}\n
+                # scp format is {utt} ... {path} ...\n
                 items = line.split(' ')
-                new_line = f'{items[0]} {transform(items[1].strip())}\n'
+                path_idx = [i for i, items in enumerate(items) if '.wav' in items or '.flac' in items][0]
+                path = items[path_idx].strip()
+                transformed_path = transform(path)
+                items[path_idx] = items[path_idx].replace(path, transformed_path)
+                new_line = ' '.join(items)
                 lines.append(new_line)
         # validate
         for line in lines:
-            line = line.split(' ')[1].strip()
+            path = line.split(' ')[path_idx].strip()
             if to == 'relative':
-                line = vpc_baseline_path / line
-            assert Path(line).exists(), f'Line {line} has issues, exiting.'
+                path = vpc_baseline_path / path
+            assert Path(path).exists(), f'Path {path}, obtained from line {line}, has issues. Exiting.'
         with open(dataset_path / 'wav.scp', mode='w') as scp:
             for line in lines:
                 scp.writelines(line)

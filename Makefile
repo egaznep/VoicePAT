@@ -2,12 +2,12 @@
 ## CONFIGURATION
 ###############################
 .ONESHELL:
-PHONY: install uninstall pretrained_models
+PHONY: install uninstall pretrained_models data
 
 PROJECT_NAME = voicepat
 ENV_NAME = $(PROJECT_NAME)_env
 
-ifeq (, $(shell mamba --version))
+ifeq (, $(which mamba))
 CONDA = conda
 else
 CONDA = mamba
@@ -17,7 +17,7 @@ endif
 ##@ INSTALLATION
 ###############################
 
-install: $(ENV_NAME) ## performs the installation. Currently the only step is to install the conda environment
+install: $(ENV_NAME) ## Performs the installation. Currently the only step is to install the conda environment
 
 uninstall:
 	@rm -rf $(ENV_NAME)
@@ -25,20 +25,29 @@ uninstall:
 	@rm -rf evaluation/utility/asr/exp
 	@rm -rf exp
 
-pretrained_models: ## downloads the pretrained models from IMS repositories
-	@echo Downloading models from IMS repositories
+data: ## Downloads the datasets from challenge server. This requires interactively entering the password a few times.
+	@echo Downloading data from challenge server. This requires interactively entering the password a few times.
+	@./01-download_data.sh
+
+pretrained_eval_models: ## Downloads the pretrained evaluation (ASV,ASR) models
+	@echo Downloading evaluation models from IMS repositories
+	@wget -q https://github.com/DigitalPhonetics/VoicePAT/releases/download/v2/data.zip
+	@wget -q https://github.com/DigitalPhonetics/VoicePAT/releases/download/v2/pre_model.zip
+	@unzip -q data.zip
+	@unzip -q pre_model.zip
+	@rm data.zip
+	@rm pre_model.zip
+
+pretrained_GAN: ## Downloads the pretrained GAN anonymization models from IMS repositories
+	@echo Downloading GAN models from IMS repositories
 	@rm -rf models
 	@mkdir -p models
 	@wget -q -O models/anonymization.zip https://github.com/DigitalPhonetics/speaker-anonymization/releases/download/v2.0/anonymization.zip
 	@wget -q -O models/asr.zip https://github.com/DigitalPhonetics/speaker-anonymization/releases/download/v2.0/asr.zip
 	@wget -q -O models/tts.zip https://github.com/DigitalPhonetics/speaker-anonymization/releases/download/v2.0/tts.zip
-	@wget -q -O models/pre_eval_models.zip https://github.com/DigitalPhonetics/VoicePAT/releases/download/v1/pre_eval_models.zip
 	@unzip -oq models/asr.zip -d models
 	@unzip -oq models/tts.zip -d models
 	@unzip -oq models/anonymization.zip -d models
-	@mkdir -p evaluation/utility/asr/exp
-	@unzip -oq models/pre_eval_models.zip -d evaluation/utility/asr/exp
-	@ln -srf evaluation/utility/asr/exp exp
 	@rm models/*.zip
 
 

@@ -1,20 +1,13 @@
 import logging
 from pathlib import Path
-import torch
+import sys
+import torch # import torch only if gpu_ids is given
 import typer
 from typing import Optional
 from typing_extensions import Annotated, Callable
 
-from anonymization.pipelines.sttts_pipeline import STTTSPipeline
-from anonymization.pipelines.dsp_pipeline import DSPPipeline
 from anonymization.pipelines.base_pipeline import BasePipeline
-
 from utils import parse_yaml, get_datasets
-
-PIPELINES: dict[str, Callable[..., BasePipeline]] = {
-    "sttts": STTTSPipeline,
-    "dsp": DSPPipeline,
-}
 
 def main(
     config: Annotated[
@@ -26,9 +19,9 @@ def main(
     gpu_ids: Annotated[
         str,
         typer.Option(
-            help="Comma separated list of GPU ids to use. If not specified, CPU will be used.",
+            help="Comma separated list of GPU ids to use. If not specified, a torch.device will not be created.",
         ),
-    ] = '0',
+    ] = None,
     force_compute: Annotated[
         bool,
         typer.Option(
@@ -46,25 +39,29 @@ def main(
 ):
     config = parse_yaml(Path(config))
     datasets = get_datasets(config)
-    gpus = gpu_ids.split(",")
+    if gpu_ids is not None:
+        gpus = gpu_ids.split(",")
 
-    devices = []
-    if torch.cuda.is_available():
-        for gpu in gpus:
-            devices.append(torch.device(f"cuda:{gpu}"))
+        devices = []
+        if torch.cuda.is_available():
+            for gpu in gpus:
+                devices.append(torch.device(f"cuda:{gpu}"))
+        else:
+            devices.append(torch.device("cpu"))
+        logging.info(f'Using devices: {devices}')
     else:
-        devices.append(torch.device("cpu"))
+        devices = None
 
-    with torch.no_grad():
-        logging.basicConfig(
-            level=logging.DEBUG if verbose else logging.INFO,
-            format="%(asctime)s - %(name)s- %(levelname)s - %(message)s",
-        )
-        logging.info(f'Running pipeline: {config["pipeline"]}')
-        pipeline = PIPELINES[config["pipeline"]](
-            config=config, force_compute=force_compute, devices=devices
-        )
-        pipeline.run_anonymization_pipeline(datasets)
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(asctime)s - %(name)s- %(levelname)s - %(message)s",
+    )
+    logging.info(f'Running pipeline: {config["pipeline"]}')
+    pipeline: BasePipeline = config["pipeline"](
+        config=config, force_compute=force_compute, devices=devices
+    )
+    out = pipeline.run_anonymization_pipeline(datasets)
+    print(out, file=sys.stdout)
 
 
 if __name__ == "__main__":

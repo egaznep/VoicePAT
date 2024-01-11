@@ -5,23 +5,28 @@
 Audio Security and Privacy Group, EURECOM
 modified version (N.T.)
 """
-import os
+import hashlib
+import itertools
 import librosa
+import librosa.core.spectrum
 import logging
-import numpy as np
-import scipy
-import wave
-import argparse
-from pathlib import Path
 import matplotlib.pyplot as plt
+import numba
+import numpy as np
+import os
 import random
-from kaldiio import ReadHelper
+import scipy
+import scipy.signal
 import shutil
+import wave
+
+from kaldiio import ReadHelper
+from pathlib import Path
 from tqdm import tqdm
+from utils.data_io import get_kaldi_entry_count
 
 
 logger = logging.getLogger(__name__)
-
 
 def load_utt2spk(path):
     assert os.path.isfile(path), f'File does not exist {path}'
@@ -29,48 +34,88 @@ def load_utt2spk(path):
     utt2spk = {utt: spk for utt, spk in table}
     return utt2spk
 
-def process_data(dataset_path, anon_level, settings):
+def hash_textstring(text):
+    """number = hash_textstring(text)
+    Hash text into a number. 
+    Default hash() depends on PYTHONHASHSEED
+    """
+    # sha256 is deterministic, using the first 8Bytes (32bits)
+    return np.abs(int(hashlib.sha256(text.encode('utf-8')).hexdigest()[:8], 16))
+
+def process_data(dataset_path: Path, anon_level: str, settings: dict, results_dir: Path, force_compute: bool = False):
+    """
+        Process data (must be in Kaldi format) in dataset_path with 
+        B2 (McAdams coefficients-based) anonymization.
+
+        Args:
+            dataset_path (Path): Path to the dataset
+            anon_level (str): Level of anonymization, either 'spk' or 'utt'
+            settings (dict): Settings for anonymization
+            results_dir (Path): Path to directory where results should be stored
+            force_compute (bool): If True, existing results will be overwritten
+    """
     rng = np.random.default_rng(2024)
     utt2spk = None
     if anon_level == 'spk':
         utt2spk = load_utt2spk( dataset_path / 'utt2spk')
 
-    output_path = Path(str(dataset_path) + settings['anon_suffix'])
-    if os.path.exists(output_path):
-        shutil.rmtree(output_path)
-    shutil.copytree(dataset_path, output_path)
-    if not os.path.exists(output_path /  'wav'):
-        os.makedirs(output_path / 'wav')
+    output_root_path = Path(results_dir)
+    output_root_path.mkdir(parents=True, exist_ok=True)
+    
+    output_path = output_root_path / f'{dataset_path.name}'
     wav_scp = dataset_path / 'wav.scp'
-    path_wav_scp_out = output_path / 'wav.scp'
-    with open(path_wav_scp_out, 'wt', encoding='utf-8') as writer:
+    wav_scp_out = output_path / 'wav.scp'
+
+    if force_compute:
+        shutil.rmtree(output_path)
+    if not output_path.exists():
+        # start off with a copy of the original dataset
+        shutil.copytree(dataset_path, output_path)
+
+    # generate the folder for the dataset we are processing
+    (output_path / 'wav').mkdir(exist_ok=True)
+    
+
+    with open(wav_scp_out, 'wt', encoding='utf-8') as writer:
         with ReadHelper(f'scp:{wav_scp}') as reader:
-            for utid, (freq, samples) in tqdm(list(reader)):
-                output_file = os.path.join(output_path / 'wav', f'{utid}.wav')
-                if os.path.exists(output_file):
-                    logger.warn(f'File {output_file} already exists')
+            # get the number of utterances in the dataset
+            N = get_kaldi_entry_count(wav_scp)
+            for utid, (freq, samples) in tqdm(reader, total=N):
+                output_file = output_path / 'wav' / f'{utid}.wav'
+                if output_file.exists():
+                    logger.debug(f'File {output_file} already exists')
                     continue
+
+                # convert from int16 to float
                 samples = samples / (np.iinfo(np.int16).max + 1)
+                
                 if anon_level == 'spk':
                     assert utid in utt2spk, f'Failed to find speaker ID for utterance {utid}'
                     spid = utt2spk[utid]
                     # make sure same generator is used for each utterance if
                     # spk-level anonymization is used
-                    rng = np.random.default_rng(np.abs(hash(spid)))
+                    rng = np.random.default_rng(hash_textstring(spid))
 
                 rand_mc_coeff = rng.uniform(settings['mc_coeff_min'], settings['mc_coeff_max'])
                
-                samples = anonym(freq=freq, samples=samples, 
+                samples = anonym_v2(freq=freq, samples=samples, 
                     winLengthinms=settings['winLengthinms'],
                     shiftLengthinms=settings['shiftLengthinms'], 
                     lp_order=settings['n_coeffs'], mcadams=rand_mc_coeff)
 
-                with wave.open(output_file, 'wb') as stream:
-                    stream.setframerate(freq)
-                    stream.setnchannels(1)
-                    stream.setsampwidth(2)
-                    stream.writeframes(samples)
-                logger.debug(f'{utid} {output_file}', file=writer)
+                # convert float to int16
+                samples = (samples / np.max(np.abs(samples)) \
+                           * (np.iinfo(np.int16).max - 1)).astype(np.int16)
+
+                # write to buffer
+                with output_file.open('wb') as file:
+                    with wave.open(file, 'wb') as stream:
+                        stream.setframerate(freq)
+                        stream.setnchannels(1)
+                        stream.setsampwidth(2)
+                        stream.writeframes(samples)
+                print(f'{utid} {output_file}', file=writer) #write to wav.scp
+
 
 def anonym(freq, samples, winLengthinms=20, shiftLengthinms=10, lp_order=20, mcadams=0.8):
     logger.debug(f'Anonymizing with McAdams coefficient {mcadams}')
@@ -139,7 +184,136 @@ def anonym(freq, samples, winLengthinms=20, shiftLengthinms=10, lp_order=20, mca
         outindex = np.arange(m * shift, m * shift + len(frame_rec))
         # overlap add
         sig_rec[outindex] = sig_rec[outindex] + frame_rec
-    sig_rec = (sig_rec / np.max(np.abs(sig_rec)) * (np.iinfo(np.int16).max - 1)).astype(np.int16)
+        
+    #sig_rec = (sig_rec / np.max(np.abs(sig_rec)) * (np.iinfo(np.int16).max - 1)).astype(np.int16)
+    
     return sig_rec
     #scipy.io.wavfile.write(output_file, freq, np.float32(sig_rec))
     #awk -F'[/.]' '{print $5 " sox " $0 " -t wav -R -b 16 - |"}' > data/$dset$anon_data_suffix/wav.scp
+
+
+
+def anonym_v2(freq, samples, winLengthinms=20, shiftLengthinms=10, lp_order=20, mcadams=0.8):
+    """anonymized_data = anonym_v2(freq, samples, 
+                                    winLengthinms=20, shiftLengthinms=10, lp_order=20, mcadams=0.8)
+                                    
+    input
+    -----
+      freq:              sampling frequency (Hz), scalar
+      samples:           input waveform data,     np.array float32, (N, )
+      winLengthinms:     analysis window length (ms), default 20ms
+      shiftLengthinms:   analysis window shift (ms), default 10ms
+      lp_order:          order of linear prediction analysis, default 20
+      mcadams:           value of McAdam coef, default 0.8
+    
+    output
+    ------
+      anonymized_data:   anonymized data, np.array float32, (N, )
+    """
+    
+    # to prevent numerical issue
+    eps = np.finfo(np.float32).eps
+    samples = samples + eps
+    
+    # short-time analysis parameters
+    winlen = np.floor(winLengthinms * 0.001 * freq).astype(int)
+    shift = np.floor(shiftLengthinms * 0.001 * freq).astype(int)
+    length_sig = len(samples)
+    
+    # fft processing parameters
+    NFFT = 2 ** (np.ceil((np.log2(winlen)))).astype(int)
+    
+    # anaysis and synth window which satisfies the constraint
+    wPR = np.hanning(winlen)
+    K = np.sum(wPR) / shift
+    win = np.sqrt(wPR / K)
+    Nframes = 1 + np.floor((length_sig - winlen) / shift).astype(int) # nr of complete frames   
+    
+    # framing
+    frames = librosa.util.frame(samples, frame_length=winlen, hop_length=shift).T
+    
+    # windowing
+    windowed_frames = frames * win
+    
+    # number of frames
+    nframe = windowed_frames.shape[0]
+
+    # LP analysis on all frames
+    lpc_coefs = librosa.core.lpc(windowed_frames + eps, order=lp_order, axis=1)
+    
+    # get Poles for LP AR transfer function
+    # tf2zpk only accepts a single transfunction function, 
+    # we have to create a list 
+    ar_poles = np.array([scipy.signal.tf2zpk(np.array([1]), x)[1] for x in lpc_coefs])
+
+    def _mcadam_angle(poles, mcadams):
+        """new_angles = _mcadam_angle(poles, mcadams)
+        Adjust the angle of imaginary poles 
+        
+        poles: np.array, pole of AR function, (n, )
+        mcadams: scalar, value of mcadams
+        new_angles: np.array, (n, )
+        """
+        old_angles = np.angle(poles)
+        # buffer to save
+        new_angles = np.zeros_like(old_angles) + old_angles
+
+        # real poles
+        real_idx = ~np.isreal(poles)
+
+        # imaginary with positive angle
+        neg_idx = np.bitwise_and(real_idx, old_angles < 0.0)
+        # imaginary with negative angle
+        pos_idx = np.bitwise_and(real_idx, old_angles > 0.0)
+        # 
+        new_angles[neg_idx] = -((-np.angle(poles[neg_idx])) ** mcadams)
+        # conjugate pair
+        new_angles[pos_idx] = np.angle(poles[pos_idx]) ** mcadams
+
+        # no need to constrain the range of the angle 
+        # new_angles[np.where(new_angles >= np.pi)] = np.pi        
+        # new_angles[np.where(new_angles <= 0)] = 0  
+
+        return new_angles
+
+    def _new_poles(old_poles, new_angles):
+        """new_poles = _new_poles(old_poles, new_angles)
+        create new poles using amplitude of original pole and new angle
+        
+        old_poles: np.array, pole of AR function, (n, )
+        new_angles: np.array, (n, )
+        """
+        new_poles = np.zeros_like(old_poles)
+        #new_poles[idx] = np.abs(old_poles[idx]) * np.exp(1j * new_angles[idx])
+        #new_poles[idx+1] = np.abs(old_poles[idx] + 1) * np.exp(-1j * new_angles[idx])
+        new_poles = np.abs(old_poles) * np.exp(1j * new_angles)
+        return new_poles
+
+    def _lpc_ana_syn(old_lpc_coef, new_lpc_coef, data):
+        """new_data = _lpc_ana_syn(old_lpc_coef, new_lpc_coef, data)
+        get excitation using old LPC, synthesize using new LPC coef
+        
+        old_lpc_coef: np.array, old LPC coef, (p, )
+        new_lpc_coef: np.array, new LPC coef, (p, )
+        data: np.array, data to be analyzed / synthesized (N, )
+        """
+        res = scipy.signal.lfilter(old_lpc_coef, np.array(1), data) 
+        return scipy.signal.lfilter(np.array([1]), new_lpc_coef, res)
+
+    pole_new_angles = _mcadam_angle(ar_poles, mcadams)
+    poles_new = _new_poles(ar_poles, pole_new_angles)
+
+    # reconstruct frame using new LPC coef
+    recon_frames = [_lpc_ana_syn(lpc_coefs[x], np.real(np.poly(poles_new[x])), windowed_frames[x]) for x in np.arange(nframe)]
+    recon_frames = np.stack(recon_frames, axis=0) * win
+
+    # overlap-add
+    anonymized_data = np.zeros_like(samples)
+    librosa.core.spectrum.__overlap_add(anonymized_data, recon_frames.T, shift)
+    
+    # convert to int16
+    #anonymized_data = (anonymized_data / np.max(np.abs(anonymized_data)) * (np.iinfo(np.int16).max - 1)).astype(np.int16)
+    return anonymized_data
+
+if __name__ == "__main__":
+    print(__doc__)

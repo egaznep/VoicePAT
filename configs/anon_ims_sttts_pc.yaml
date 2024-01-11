@@ -1,16 +1,16 @@
-root_dir : ..
-data_dir: !PLACEHOLDER
+root_dir : .
+data_dir: !ref <root_dir>/data #TODO adjust path, absolute path
 save_intermediate: true
 save_output: true
 
-results_dir: !PLACEHOLDER # TODO adjust path, e.g. <root_dir>/results
-models_dir:  !PLACEHOLDER  # TODO adjust path, e.g. <root_dir>/models
-vectors_dir: !ref <root_dir>/results/original_speaker_embeddings
+results_dir: !ref <root_dir>/exp/gan_anon/ # TODO adjust path, e.g. <root_dir>/results
+models_dir:  !ref <root_dir>/models  # TODO adjust path, e.g. <root_dir>/models
+vectors_dir: !ref <root_dir>/exp/original_speaker_embeddings
 
-force_compute_all: false
+force_compute: false
 datasets: !include:datasets_vpc2022_official_anon.yaml
 
-pipeline: sttts
+pipeline: !name:anonymization.pipelines.sttts_pipeline.STTTSPipeline
 
 modules:
   asr:

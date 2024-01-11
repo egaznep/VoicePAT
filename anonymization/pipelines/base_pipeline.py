@@ -1,6 +1,6 @@
 from pathlib import Path
 import typing
-
+from ruamel.yaml.representer import RoundTripRepresenter, SafeRepresenter
 
 class BasePipeline:
     def __init__(self, config: dict):
@@ -9,7 +9,7 @@ class BasePipeline:
     def run_anonymization_pipeline(
         self,
         datasets: typing.Dict[str, Path],
-    ) -> dict:
+    ) -> Path:
         """
         Runs the anonymization pipeline on the given datasets. Optionally
         prepares the results such that the evaluation pipeline
@@ -23,3 +23,9 @@ class BasePipeline:
                 as value.
         """
         raise NotImplementedError("You must implement this method in a subclass")
+
+# # necessary to make BasePipeline and subclasses dumpable
+def represent_types(representer: RoundTripRepresenter, data: type):
+    return representer.represent_scalar("!name:", f"{data.__module__}.{data.__qualname__}")
+
+RoundTripRepresenter.add_representer(type, represent_types)

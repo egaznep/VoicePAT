@@ -6,11 +6,13 @@ from collections import defaultdict
 from pathlib import Path
 import pandas as pd
 from typing import List
-
+import multiprocessing
 parser = ArgumentParser()
 parser.add_argument('--config', default='config_eval.yaml')
 parser.add_argument('--gpu_ids', default='0')
 args = parser.parse_args()
+logger = logging.getLogger(__name__)
+from datetime import datetime
 
 if 'CUDA_VISIBLE_DEVICES' not in os.environ:  # do not overwrite previously set devices
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -22,8 +24,7 @@ import shutil
 import itertools
 
 from evaluation import evaluate_asv, train_asv_eval, evaluate_asr, train_asr_eval, evaluate_gvd
-from utils import parse_yaml, find_asv_model_checkpoint, scan_checkpoint, combine_asr_data, split_vctk_into_common_and_diverse
-
+from utils import parse_yaml, find_asv_model_checkpoint, scan_checkpoint, combine_asr_data, split_vctk_into_common_and_diverse, get_datasets, prepare_evaluation_data, get_anon_wav_scps
 
 def get_evaluation_steps(params):
     eval_steps = {}
@@ -67,19 +68,29 @@ def check_vctk_split(data_trials, eval_data_dir, anon_suffix):
             if (not Path(eval_data_dir, common_split).exists() or \
                     not Path(eval_data_dir, diverse_split).exists()):
                 split_vctk_into_common_and_diverse(dataset=trial, output_path=eval_data_dir, orig_data_path=eval_data_dir,
-                                                   copy_files=copy_files_for_orig, anon=False, anon_suffix=f'_{anon_suffix}',
+                                                   copy_files=copy_files_for_orig, anon=False, anon_suffix=f'{anon_suffix}',
                                                    out_data_split=Path(eval_data_dir, trial))
-            if not Path(eval_data_dir, f'{common_split}_{anon_suffix}').exists() or \
-                not Path(eval_data_dir, f'{diverse_split}_{anon_suffix}').exists():
+            if not Path(eval_data_dir, f'{common_split}{anon_suffix}').exists() or \
+                not Path(eval_data_dir, f'{diverse_split}{anon_suffix}').exists():
                 split_vctk_into_common_and_diverse(dataset=trial, output_path=eval_data_dir, orig_data_path=eval_data_dir,
-                                                   copy_files=copy_files_for_anon, anon=True, anon_suffix=f'_{anon_suffix}',
-                                                   out_data_split = Path(eval_data_dir, f'{trial}_{anon_suffix}'))
+                                                   copy_files=copy_files_for_anon, anon=True, anon_suffix=f'{anon_suffix}',
+                                                   out_data_split = Path(eval_data_dir, f'{trial}{anon_suffix}'))
             separated_data_trials.append((enroll, common_split))
             separated_data_trials.append((enroll, diverse_split))
         else:
             separated_data_trials.append((enroll, trial))
     return separated_data_trials
 
+def check_anon_dir(datasets_list, eval_data_dir, anon_suffix):
+    for dataset in datasets_list:
+        if not os.path.exists(f'{eval_data_dir}/{dataset["data"]}_{dataset["set"]}_enrolls_{anon_suffix}'):
+            print(f'Not exits:{eval_data_dir}/{dataset["data"]}_{dataset["set"]}_enrolls_{anon_suffix}, try to create')
+            return False
+        for trial in dataset["trials"]:
+            if not os.path.exists(f'{eval_data_dir}/{dataset["data"]}_{dataset["set"]}_{trial}_{anon_suffix}'):
+                return False
+
+    return True
 
 def get_eval_asr_datasets(datasets_list, eval_data_dir, anon_suffix):
     # combines the trial subsets (trial_f, trial_m) of each dataset into one asr dataset
@@ -98,7 +109,10 @@ def get_eval_asr_datasets(datasets_list, eval_data_dir, anon_suffix):
                 trial_dirs = []
                 for dataset in datasets:
                     for trial in dataset['trials']:
-                        trial_dirs.append(Path(eval_data_dir / f'{dataset["data"]}_{dataset["set"]}_{trial}'))
+                        if anon_suffix in asr_dataset:
+                            trial_dirs.append(Path(eval_data_dir / f'{dataset["data"]}_{dataset["set"]}_{trial}_{anon_suffix}'))
+                        else:
+                            trial_dirs.append(Path(eval_data_dir / f'{dataset["data"]}_{dataset["set"]}_{trial}'))
                 output_dir = Path(eval_data_dir / asr_dataset)
                 combine_asr_data(input_dirs=trial_dirs, output_dir=output_dir)
         eval_data.add(asr_dataset_name)
@@ -107,6 +121,7 @@ def get_eval_asr_datasets(datasets_list, eval_data_dir, anon_suffix):
 
 
 if __name__ == '__main__':
+    multiprocessing.set_start_method("fork",force=True)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s- %(levelname)s - %(message)s')
 
     params = parse_yaml(Path('configs', args.config))
@@ -115,8 +130,24 @@ if __name__ == '__main__':
     eval_data_dir = params['eval_data_dir']
     anon_suffix = params['anon_data_suffix']
     eval_steps = get_evaluation_steps(params)
+
+    if "anon_data_dir" in params:
+        logger.info("Preparing datadir according to the Kaldi format.")
+        now = datetime.strftime(datetime.today(), "%d-%m-%y_%H:%M")
+        datasets = get_datasets(params)
+        anon_wav_scps = get_anon_wav_scps(params['anon_data_dir'])
+        output_path = params['exp_dir'] / 'formatted_data' / now
+        prepare_evaluation_data(
+            dataset_dict=datasets,
+            anon_wav_scps=anon_wav_scps,
+            anon_vectors_path=params['data_dir'],
+            anon_suffix='_' + anon_suffix,
+            output_path=output_path,
+        )
+        eval_data_dir = output_path
+
     eval_data_trials = get_eval_trial_datasets(params['datasets'])
-    eval_data_trials = check_vctk_split(eval_data_trials, eval_data_dir=eval_data_dir, anon_suffix=anon_suffix)
+    eval_data_trials = check_vctk_split(eval_data_trials, eval_data_dir=eval_data_dir, anon_suffix='_'+anon_suffix)
     eval_data_asr = get_eval_asr_datasets(params['datasets'], eval_data_dir=eval_data_dir, anon_suffix=anon_suffix)
 
     # make sure given paths exist
@@ -125,7 +156,7 @@ if __name__ == '__main__':
     if 'privacy' in eval_steps:
         if 'asv' in eval_steps['privacy']:
             asv_params = params['privacy']['asv']
-            model_dir = find_asv_model_checkpoint(asv_params['model_dir'])
+            model_dir = params['privacy']['asv']['model_dir']
             if 'training' in asv_params:
                 asv_train_params = asv_params['training']
                 if not model_dir.exists() or asv_train_params.get('retrain', True) is True:
@@ -134,10 +165,7 @@ if __name__ == '__main__':
                     train_asv_eval(train_params=asv_train_params, output_dir=asv_params['model_dir'])
                     logging.info("ASV training time: %f min ---" % (float(time.time() - start_time) / 60))
                     model_dir = scan_checkpoint(model_dir, 'CKPT')
-                    if asv_params['vec_type'] == 'xvector':
-                        shutil.copy('evaluation/privacy/asv/asv_train/hparams/xvector/hyperparams.yaml', model_dir)
-                    else:
-                        shutil.copy('evaluation/privacy/asv/asv_train/hparams/ecapa/hyperparams.yaml', model_dir)
+                    shutil.copy('evaluation/privacy/asv/asv_train/hparams/ecapa/hyperparams.yaml', params['privacy']['asv']['model_dir'])
 
             if 'evaluation' in asv_params:
                 logging.info('Perform ASV evaluation')
@@ -149,42 +177,41 @@ if __name__ == '__main__':
     if 'utility' in eval_steps:
         if 'asr' in eval_steps['utility']:
             asr_params = params['utility']['asr']
+            
             model_name = asr_params['model_name']
-            model_dir = asr_params['model_dir']
-            libri_dir = asr_params['libri_dir']
             backend = asr_params['backend'].lower()
-            asr_model_path = None
+
 
             if 'training' in asr_params:
                 asr_train_params = asr_params['training']
-                asr_model_path = model_dir / 'asr_train_asr_transformer_raw_en_bpe5000'
-                if asr_train_params['anon'] and asr_train_params['finetuning']:
-                    asr_model_path = model_dir / 'asr_train_asr_transformer_anon_raw_en_bpe5000'
-
+                model_dir = asr_train_params['model_dir']
+                if "anon_libri_360" in params:
+                    asr_train_params['train_data_dir'] = output_path
                 if not model_dir.exists() or asr_train_params.get('retrain', True) is True:
                     start_time = time.time()
-                    logging.info('Perform ASR training')
-                    train_asr_eval(params=asr_train_params, libri_dir=libri_dir, model_name=model_name,
-                                   model_dir=model_dir, anon_data_suffix=anon_suffix)
-                    logging.info("--- ASR training time: %f min ---" % (float(time.time() - start_time) / 60))
+                    print('Perform SpeechBrain ASR training')
+                    train_asr_eval(params=asr_train_params)
+                    model_dir_old = model_dir
+                    model_dir = scan_checkpoint(model_dir, 'CKPT')
+                    shutil.copy('evaluation/utility/asr/speechbrain_asr/asr_train/hparams/transformer_inference.yaml', model_dir)
+                    shutil.copy(model_dir_old / 'lm.ckpt', model_dir)
+                    shutil.copy(model_dir_old / 'tokenizer.ckpt', model_dir)
+                    print("--- ASR training time: %f min ---" % (float(time.time() - start_time) / 60))
 
             if 'evaluation' in asr_params:
                 asr_eval_params = asr_params['evaluation']
-                if not asr_model_path:
-                    if backend == 'espnet':
-                        if asr_eval_params.get('anon_train_model', False):
-                            asr_model_path = model_dir / 'asr_train_asr_transformer_anon_raw_en_bpe5000'
-                        else:
-                            asr_model_path = model_dir / 'asr_train_asr_transformer_raw_en_bpe5000'
-                    else:
-                        asr_model_path = model_dir
+                asr_model_path = asr_eval_params['model_dir']
+                asr_model_path = scan_checkpoint(asr_model_path, 'CKPT')
 
+                if not asr_model_path:
+                    asr_model_path = model_dir
                 start_time = time.time()
-                logging.info('Perform ASR evaluation')
+                print('Perform ASR evaluation')
                 evaluate_asr(eval_datasets=eval_data_asr, eval_data_dir=eval_data_dir, params=asr_eval_params,
-                             model_path=asr_model_path, anon_data_suffix=anon_suffix, libri_dir=libri_dir,
+                             model_path=asr_model_path, anon_data_suffix=anon_suffix,
                              device=device, backend=backend)
-                logging.info("--- ASR evaluation time: %f min ---" % (float(time.time() - start_time) / 60))
+                print("--- ASR evaluation time: %f min ---" % (float(time.time() - start_time) / 60))
+
 
         if 'gvd' in eval_steps['utility']:
             gvd_params = params['utility']['gvd']

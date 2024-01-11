@@ -1,14 +1,14 @@
-root_dir : !PLACEHOLDER # TODO adjust path
-data_dir: !PLACEHOLDER  # TODO adjust path
+root_dir : .
+data_dir: !ref <root_dir>/data
 save_output: true
 
 datasets: !include:datasets_vpc2022_official_anon.yaml
 
-results_dir: !PLACEHOLDER # TODO adjust path
-pipeline: dsp
+results_dir: !ref <root_dir>/exp/B2_anon
+pipeline: !name:anonymization.pipelines.dsp_pipeline.DSPPipeline
 
 modules:
-  anon_suffix: _dsp
+  anon_suffix: _anon
   n_coeffs: 20
   mc_coeff_min: 0.5
   mc_coeff_max: 0.9

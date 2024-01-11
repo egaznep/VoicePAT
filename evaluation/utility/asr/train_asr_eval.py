@@ -2,65 +2,54 @@ from pathlib import Path
 import os
 import subprocess
 import torch
+from copy import deepcopy
+from .speechbrain_asr.asr_train.train import train_speechbrain_asr
 
-
-def train_asr_eval(params, libri_dir, model_name, model_dir, anon_data_suffix):
-    backend = params.get('backend', 'espnet').lower()
-    if backend == 'espnet':
-        asr_train_espnet(params=params, libri_dir=libri_dir, model_name=model_name, model_dir=model_dir,
-                         anon_data_suffix=anon_data_suffix)
-    elif backend == 'speechbrain':
-        asr_train_speechbrain(params=params, libri_dir=libri_dir, model_name=model_name, model_dir=model_dir,
-                              anon_data_suffix=anon_data_suffix)
+def train_asr_eval(params):
+    backend = params.get('backend', 'speechbrain').lower()
+    if backend == 'speechbrain':
+        asr_train_speechbrain(train_params=params)
     else:
-        raise ValueError(f'Unknown backend {backend} for ASR evaluation. Available backends: espnet, speechbrain.')
+        raise ValueError(f'Unknown backend {backend} for ASR evaluation. Available backends: speechbrain.')
+
+def asr_train_speechbrain(train_params):
+    output_folder=train_params['model_dir']
+    print(f'Train SpeechBrain ASR model: {output_folder}')
+    hparams = {
+        'batch_size': train_params['batch_size'],
+        'lr_adam': train_params['lr'],
+        'number_of_epochs': train_params['epochs'],
+        'anon': train_params['anon'],
+        'data_folder': str(train_params['train_data_dir']),
+        'output_folder': str(train_params['model_dir']),
+        'pretrained_path': str(train_params['pretrained_model']),
+        'train_splits': [train_params['train_splits']]
+    }
+
+    config = train_params['train_config']
+
+    run_opts = {
+    'debug': False,
+    'debug_batches': 2,
+    'debug_epochs': 2,
+    'debug_persistently': False,
+    'device': 'cuda:0',
+    'data_parallel_backend': False,
+    'distributed_launch': False,
+    'distributed_backend': 'nccl',
+    'find_unused_parameters': False,
+    'tqdm_colored_bar': False
+}
+
+    # force device arg to be the same as local_rank from torchrun
+    local_rank = os.environ.get("LOCAL_RANK")
+    if local_rank is not None and "cuda" in run_opts["device"]:
+        run_opts["device"] = run_opts["device"][:-1] + str(local_rank)
 
 
-def asr_train_espnet(params, libri_dir, model_name, model_dir, anon_data_suffix):
-    print(f'Train ASR model: {model_dir}')
-    exp_dir = Path('exp', model_name)
-    ngpu = min(params.get('num_gpus', 0), torch.cuda.device_count())  # cannot use more gpus than available
-
-    train_params = [
-        '--lang', 'en',
-        '--ngpu', str(ngpu),
-        '--expdir', str(exp_dir),
-        '--use_lm', 'false',
-        '--nbpe', '5000',
-        '--num_utt', str(params['num_utt']),
-        '--num_spk', str(params['num_spk']),
-        '--max_wav_duration', '30',
-        '--test_sets', "test_clean test_other dev_clean dev_other",
-        '--valid_set', "dev",
-        '--bpe_train_text', "data/train_clean_360/text",
-        '--nj', str(params.get('nj', 5))
-    ]
-
-    asr_config = 'conf/train_asr_transformer.yaml'
-
-    if params.get('anon', False):
-        local_data_opts = ' '.join([str(libri_dir), str(params['train_data_dir']), anon_data_suffix])
-        train_set = f'train_clean_360_{anon_data_suffix}'
-        if params.get('finetuning', False) is True:
-            asr_config = 'conf/train_asr_transformer_anon.yaml'
-            train_params.extend(['--pretrained_model', f'{str(params["pretrained_model"])}/valid.acc.ave.pth'])
-    else:
-        local_data_opts = str(libri_dir)
-        train_set = 'train_clean_360'
-
-    train_params.extend(['--local_data_opts', local_data_opts,
-                         '--train_set', train_set,
-                         '--asr_config', asr_config])
-
-    cwd = Path.cwd()
-    os.chdir('evaluation/utility/asr')  # espnet recipe needs several files at specific relative positions
-    print(Path.cwd())
-    subprocess.run(['./asr.sh'] + train_params)
-
-    subprocess.run(['ln', '-srf', exp_dir, model_dir])
-    os.chdir(cwd)
+    sb_run_opts = deepcopy(run_opts)
+    if torch.cuda.device_count() > 0:
+        sb_run_opts['data_parallel_backend'] = True
+    train_speechbrain_asr(config, hparams, run_opts=sb_run_opts)
 
 
-def asr_train_speechbrain(params, libri_dir, model_name, model_dir, anon_data_suffix):
-    raise NotImplementedError('ASR training with speechbrain backend not implemented yet. Use pretrained model '
-                              'instead.')

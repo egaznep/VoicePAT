@@ -6,6 +6,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def get_kaldi_entry_count(path: Path):
+    with open(path, 'r') as f:
+        return len(f.readlines())
+
 def read_kaldi_format(filename, return_as_dict=True, values_as_string=False):
     key_list = []
     value_list = []
@@ -73,6 +77,8 @@ def parse_yaml(filename, overrides=None):
 
 def save_yaml(config, filename):
     config = _transform_paths_back_to_strings(config)
+    # create the path if non-existent
+    filename.parent.mkdir(parents=True, exist_ok=True)
     with open(filename, 'w') as f:
         #json.dump(f, config)
         dump_hyperpyyaml(config, f)

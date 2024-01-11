@@ -2,6 +2,7 @@ from pathlib import Path
 from datetime import datetime
 import logging
 import time
+import torch
 import typing
 
 from anonymization.modules import (
@@ -30,10 +31,12 @@ class STTTSPipeline(BasePipeline):
               - speaker embedding extr. -> speaker anon. -
 
         Args:
-            config (dict): a configuration dictionary, e.g., see anon_ims_sttts_pc.yaml
+            config (dict): a configuration dictionary, e.g., 
+                see configs/anon_ims_sttts_pc.yaml
             force_compute (bool): if True, forces re-computation of
                 all steps. otherwise uses saved results.
-            devices (list): a list of torch-interpretable devices
+            devices (list): a list of torch-interpretable devices. Defaults to 
+                None, which means that CPU will be used.
         """
         self.total_start_time = time.time()
         self.config = config
@@ -44,6 +47,10 @@ class STTTSPipeline(BasePipeline):
         save_intermediate = config.get("save_intermediate", True)
 
         modules_config = config["modules"]
+
+        # handle no devices case (CPU)
+        if devices is None:
+            devices = [torch.device('cpu')]
 
         # ASR component
         self.speech_recognition = SpeechRecognition(
