@@ -29,12 +29,12 @@ VoicePAT is a toolkit for speaker anonymization research. It is based on the fra
 Requires `conda` for environment management. Installation of `mamba` is also recommended for speeding up the environment-related tasks. Simply clone the repository and run the following commands, a conda environment will be generated in the project root folder and the pretrained models will be downloaded.
 
 ```bash
-make install pretrained_models  
+git clone -b vpc  https://github.com/DigitalPhonetics/VoicePAT.git
+make install pretrained_eval_models
+make pretrained_GAN_models # OPTIONAL: if you want to use the GAN model
 ```
 
 The datasets have to be downloaded via the VoicePrivacy Challenge framework. Once the download is complete, the `.scp` files need to be converted to the absolute path, because they are relative to the challenge folder. Use [utils/relative_scp_to_abs.py](utils/relative_scp_to_abs.py) for this purpose. Then simply point `data_path` in the YAML configurations to the data folder of the VoicePrivacy Challenge framework.
-
-If you want to use the ESPnet-based ASR evaluation model, you additionally need to clone and install [ESPNet](https://github.com/espnet/espnet/) and insert the link to it in [evaluation/utility/asr/path.sh](evaluation/utility/asr/path.sh), e.g., ``MAIN_ROOT=~/espnet``.
 
 ## Usage
 
@@ -44,55 +44,52 @@ For using the toolkit with the existing methods, you can use the configuration f
 
 ### Anonymization
 
-The framework currently contains only one pipeline and config for anonymization, [anon_ims_sttts_pc.yaml](configs/anon_ims_sttts_pc.yaml). If you are using this config, you need to modify at least the following entries:
-
-```YAML
-data_dir:    # path to original data in Kaldi-format for anonymization
-results_dir: # path to location for all (intermediate) results of the anonymization
-models_dir:  # path to models location
-```
+The framework currently contains two pipelines for anonymization, [anon_ims_sttts_pc.yaml](configs/anon_ims_sttts_pc.yaml) and [anon_dsp.yaml](configs/anon_dsp.yaml). 
 
 Running an anonymization pipeline is done like this:
 
+```bash
+python run_anonymization.py --config=configs/anon_ims_sttts_pc.yaml --gpu_ids=0,1 # optional: --force-compute
+python run_anonymization.py --config=configs/anon_dsp.yaml  # optional: --force-compute
 ```
-python run_anonymization.py --config anon_ims_sttts_pc.yaml --gpu_ids 0,1 --force_compute
-```
+
 This will perform all computations that support parallel computing on the gpus with ID 0 and 1, and on GPU 0 
 otherwise. If no gpu_ids are specified, it will run only on GPU 0 or CPU, depending on whether cuda is available. 
-`--force_compute` causes all previous computations to be run again. In most cases, you can delete that flag from the 
+`--force-compute` causes all previous computations to be run again. In most cases, you can delete that flag from the 
 command to speed up the anonymization.
 
-Pretrained models for this anonymization can be found at [https://github.
-com/DigitalPhonetics/speaker-anonymization/releases/tag/v2.0](https://github.com/DigitalPhonetics/speaker-anonymization/releases/tag/v2.0) and earlier releases.
+Pretrained models for anonymization using STTTS-GAN pipeline are downloaded by `make pretrained_GAN_models`
 
 ### Evaluation
 
 All other config files in [configs](configs) can be used for evaluation with different settings. In these configs, you need to adapt at least
 
-```
+```YAML
 eval_data_dir: path to anonymized evaluation data in Kaldi-format
-asr/libri_dir: path to original LibriSpeech dataset
 ```
 
-Running an evaluation pipeline is done like this:
+Running an evaluation pipeline could be done like this:
 
+```bash
+python run_evaluation.py --config=configs/eval_pre_ecapa_cos.yaml --gpu_ids 1,2,3
+# OR
+python run_evaluation.py --config=configs/eval_pre_ecapa_cos.yaml --gpu_ids 1,2,3 path/to/anonymized/data/in/KALDI/format # given path overrides the eval_data_dir specified in the .yaml config
 ```
-python run_evaluation.py --config eval_pre_ecapa_cos.yaml --gpu_ids 1,2,3
+
+The latter also allows piping the anonymization and the evaluation in the following way:
+
+```bash
+python run_anonymization.py --config=configs/eval_pre_ecapa_cos.yaml --gpu_ids 1,2,3 |python run_evaluation.py --config=configs/eval_pre_ecapa_cos.yaml --gpu_ids 1,2,3
 ```
 
-making the GPUs with IDs 1, 2 and 3 available to the process. If no GPU is specified, it will default to CUDA:0 or use all GPUs if cuda is available, or run on CPU otherwise.
-
-Pretrained evaluation models can be found in release v1.
+Pretrained models for evaluation are downloaded by `make pretrained_eval_models`
 
 ## Acknowledgements
 
 Several parts of this toolkit are based on or use code from external sources, i.e.,
 
 * [VoicePrivacy Challenge 2022](https://github.com/Voice-Privacy-Challenge/Voice-Privacy-Challenge-2022), [ESPnet](https://github.com/espnet/espnet/), [SpeechBrain](https://github.com/speechbrain/speechbrain/) for evaluation
-* the [GAN-based anonymization system by IMS (University of Stuttgart)](https://github.com/DigitalPhonetics/speaker-anonymization) 
-  for 
-  anonymization
+* the [GAN-based anonymization system by IMS (University of Stuttgart)](https://github.com/DigitalPhonetics/speaker-anonymization) for anonymization
 
-See the READMEs for [anonymization](anonymization/README.md) and [evaluation](evaluation/README.md) for more 
-information.
+See the READMEs for [anonymization](anonymization/README.md) and [evaluation](evaluation/README.md) for more information.
 
