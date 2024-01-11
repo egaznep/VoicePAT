@@ -31,7 +31,7 @@ Requires `conda` for environment management. Installation of `mamba` is also rec
 ```bash
 git clone -b vpc  https://github.com/DigitalPhonetics/VoicePAT.git
 make install pretrained_eval_models
-make pretrained_GAN_models # OPTIONAL: if you want to use the GAN model
+make pretrained_GAN # OPTIONAL: if you want to use the GAN model
 ```
 
 The datasets have to be downloaded via the VoicePrivacy Challenge framework. Once the download is complete, the `.scp` files need to be converted to the absolute path, because they are relative to the challenge folder. Use [utils/relative_scp_to_abs.py](utils/relative_scp_to_abs.py) for this purpose. Then simply point `data_path` in the YAML configurations to the data folder of the VoicePrivacy Challenge framework.
