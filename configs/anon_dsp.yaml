@@ -4,7 +4,7 @@ save_output: true
 
 datasets: !include:datasets_vpc2022_official_anon.yaml
 
-results_dir: !ref <root_dir>/exp/B2_anon
+results_dir: !ref <root_dir>/exp/B2_anon/anon_speech
 pipeline: !name:anonymization.pipelines.dsp_pipeline.DSPPipeline
 
 modules:

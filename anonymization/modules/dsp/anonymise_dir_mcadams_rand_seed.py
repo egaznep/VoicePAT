@@ -12,6 +12,7 @@ import librosa.core.spectrum
 import logging
 import utils.logging
 import matplotlib.pyplot as plt
+import multiprocessing
 import numba
 import numpy as np
 import os
@@ -21,11 +22,13 @@ import scipy.signal
 import shutil
 import wave
 
+from itertools import repeat
 from kaldiio import ReadHelper
 from pathlib import Path
 from tqdm import tqdm
 from utils.data_io import get_kaldi_entry_count
 
+multiprocessing.set_start_method('fork', force=True)
 
 logger = logging.getLogger(__name__)
 
@@ -74,48 +77,50 @@ def process_data(dataset_path: Path, anon_level: str, settings: dict, results_di
         shutil.copytree(dataset_path, output_path)
 
     # generate the folder for the dataset we are processing
-    (output_path / 'wav').mkdir(exist_ok=True)
+    output_path.mkdir(exist_ok=True)
     
+    with ReadHelper(f'scp:{wav_scp}') as reader:
+        # get the number of utterances in the dataset
+        N = get_kaldi_entry_count(wav_scp)
+        #for utid, (freq, samples) in tqdm(reader, total=N):
+        mp = multiprocessing.Pool(processes=(multiprocessing.cpu_count()+1)//2)
+        mp.starmap(process_wav, tqdm(zip(reader, repeat(utt2spk), repeat(settings), repeat(anon_level), repeat(output_path)), total=N), chunksize=10)
 
-    with open(wav_scp_out, 'wt', encoding='utf-8') as writer:
-        with ReadHelper(f'scp:{wav_scp}') as reader:
-            # get the number of utterances in the dataset
-            N = get_kaldi_entry_count(wav_scp)
-            for utid, (freq, samples) in tqdm(reader, total=N):
-                output_file = output_path / 'wav' / f'{utid}.wav'
-                if output_file.exists():
-                    logger.debug(f'File {output_file} already exists')
-                    continue
+def process_wav(data, utt2spk, settings, anon_level, output_path):
+    utid, (freq, samples) = data
+    output_file = output_path / f'{utid}.wav'
+    if output_file.exists():
+        logger.debug(f'File {output_file} already exists')
+        return
 
-                # convert from int16 to float
-                samples = samples / (np.iinfo(np.int16).max + 1)
-                
-                if anon_level == 'spk':
-                    assert utid in utt2spk, f'Failed to find speaker ID for utterance {utid}'
-                    spid = utt2spk[utid]
-                    # make sure same generator is used for each utterance if
-                    # spk-level anonymization is used
-                    rng = np.random.default_rng(hash_textstring(spid))
+    # convert from int16 to float
+    samples = samples / (np.iinfo(np.int16).max + 1)
+    
+    if anon_level == 'spk':
+        assert utid in utt2spk, f'Failed to find speaker ID for utterance {utid}'
+        spid = utt2spk[utid]
+        # make sure same generator is used for each utterance if
+        # spk-level anonymization is used
+        rng = np.random.default_rng(hash_textstring(spid))
 
-                rand_mc_coeff = rng.uniform(settings['mc_coeff_min'], settings['mc_coeff_max'])
-               
-                samples = anonym_v2(freq=freq, samples=samples, 
-                    winLengthinms=settings['winLengthinms'],
-                    shiftLengthinms=settings['shiftLengthinms'], 
-                    lp_order=settings['n_coeffs'], mcadams=rand_mc_coeff)
+    rand_mc_coeff = rng.uniform(settings['mc_coeff_min'], settings['mc_coeff_max'])
+    
+    samples = anonym_v2(freq=freq, samples=samples, 
+        winLengthinms=settings['winLengthinms'],
+        shiftLengthinms=settings['shiftLengthinms'], 
+        lp_order=settings['n_coeffs'], mcadams=rand_mc_coeff)
 
-                # convert float to int16
-                samples = (samples / np.max(np.abs(samples)) \
-                           * (np.iinfo(np.int16).max - 1)).astype(np.int16)
+    # convert float to int16
+    samples = (samples / np.max(np.abs(samples)) \
+                * (np.iinfo(np.int16).max - 1)).astype(np.int16)
 
-                # write to buffer
-                with output_file.open('wb') as file:
-                    with wave.open(file, 'wb') as stream:
-                        stream.setframerate(freq)
-                        stream.setnchannels(1)
-                        stream.setsampwidth(2)
-                        stream.writeframes(samples)
-                print(f'{utid} {output_file}', file=writer) #write to wav.scp
+    # write to buffer
+    with output_file.open('wb') as file:
+        with wave.open(file, 'wb') as stream:
+            stream.setframerate(freq)
+            stream.setnchannels(1)
+            stream.setsampwidth(2)
+            stream.writeframes(samples)
 
 
 def anonym(freq, samples, winLengthinms=20, shiftLengthinms=10, lp_order=20, mcadams=0.8):
