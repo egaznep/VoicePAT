@@ -1,4 +1,5 @@
 import logging
+import utils.logging
 from pathlib import Path
 import sys
 import torch # import torch only if gpu_ids is given
@@ -8,6 +9,8 @@ from typing_extensions import Annotated, Callable
 
 from anonymization.pipelines.base_pipeline import BasePipeline
 from utils import parse_yaml, get_datasets
+
+logger = logging.getLogger('root:anonymizer')
 
 def main(
     config: Annotated[
@@ -37,6 +40,12 @@ def main(
         ),
     ] = False,
 ):
+    
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else utils.logging.NOTICE,
+        format="%(asctime)s - Anonymization:%(name)s- %(levelname)s - %(message)s",
+    )
+    
     config = parse_yaml(Path(config))
     datasets = get_datasets(config)
     if gpu_ids is not None:
@@ -48,15 +57,13 @@ def main(
                 devices.append(torch.device(f"cuda:{gpu}"))
         else:
             devices.append(torch.device("cpu"))
-        logging.info(f'Using devices: {devices}')
+        logger.log(utils.logging.NOTICE, f'Using devices: {devices}')
     else:
         devices = None
+        logger.log(utils.logging.NOTICE, f'No device specified, running on CPU.')
 
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s - %(name)s- %(levelname)s - %(message)s",
-    )
-    logging.info(f'Running pipeline: {config["pipeline"]}')
+
+    logger.log(utils.logging.NOTICE, f'Running pipeline: {config["pipeline"]}')
     pipeline: BasePipeline = config["pipeline"](
         config=config, force_compute=force_compute, devices=devices
     )

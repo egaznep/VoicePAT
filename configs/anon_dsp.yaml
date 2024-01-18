@@ -1,5 +1,5 @@
 root_dir : .
-data_dir: !ref <root_dir>/data
+data_dir: ~/Projects/2022-voiceprivacychallenge/baseline/data
 save_output: true
 
 datasets: !include:datasets_vpc2022_official_anon.yaml

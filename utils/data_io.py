@@ -3,6 +3,7 @@ from hyperpyyaml import load_hyperpyyaml, dump_hyperpyyaml
 import json
 import pandas as pd
 import logging
+import utils.logging
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,5 @@
 import logging
+import utils.logging
 from tqdm import tqdm
 from pathlib import Path
 import torch
@@ -6,7 +7,7 @@ import torchaudio
 from tqdm.contrib.concurrent import process_map
 import time
 from torch.multiprocessing import set_start_method
-from itertools import repeat, cycle
+from itertools import repeat, cycle, chain
 import numpy as np
 
 from .extraction.embedding_methods import SpeechBrainVectors, StyleEmbeddings
@@ -14,7 +15,10 @@ from .extraction.ims_speaker_extraction_methods import normalize_wave
 from .speaker_embeddings import SpeakerEmbeddings
 from utils import read_kaldi_format
 
-set_start_method('spawn', force=True)
+# otherwise we get 'Cannot re-initialize CUDA in forked subprocess. To use 
+# CUDA with multiprocessing, you must use the 'spawn' start method'
+set_start_method('spawn', force=True) 
+
 logger = logging.getLogger(__name__)
 
 class SpeakerExtraction:
@@ -44,8 +48,12 @@ class SpeakerExtraction:
             'vec_type': self.vec_type,
             'model_path': self.emb_model_path,
         }
-
-        self.extractors = [create_extractors(hparams=self.model_hparams, device=device) for device, process in zip(cycle(devices), range(len(devices)))]
+        self.sleep = settings.get('sleep', 0)
+        if self.sleep:
+            logger.log(utils.logging.NOTICE, f'Sleep time: {self.sleep} seconds')
+        else:
+            logger.debug('No sleep time')
+        self.extractors = [None for device, process in zip(cycle(devices), range(len(devices)))] # resolves the issue of multiprocessing with Silero VAD
 
     def extract_speakers(self, dataset_path, dataset_name=None, emb_level=None):
         dataset_name = dataset_name if dataset_name is not None else dataset_path.name
@@ -58,26 +66,28 @@ class SpeakerExtraction:
         speaker_embeddings = SpeakerEmbeddings(vec_type=self.vec_type, emb_level='utt', device=self.devices[0])
 
         if (dataset_results_dir / 'speaker_vectors.pt').exists() and not self.force_compute:
-            logger.info('No speaker extraction necessary; load existing embeddings instead...')
+            logger.log(utils.logging.NOTICE, 'No speaker extraction necessary; load existing embeddings instead...')
             speaker_embeddings.load_vectors(dataset_results_dir)
             # assume the loaded vectors are computed according to the setting in config
             speaker_embeddings.emb_level = emb_level
         else:
-            logger.info(f'Extract embeddings of {len(wav_scp)} utterances')
+            logger.log(utils.logging.NOTICE, f'Extract embeddings of {len(wav_scp)} utterances')
             speaker_embeddings.new = True
 
             if self.n_processes > 1:
-                sleeps = [10 * i for i in range(self.n_processes)]
+                sleeps = [self.sleep * i for i in range(self.n_processes)]
                 indices = np.array_split(np.arange(len(wav_scp)), self.n_processes)
                 wav_scp_items = list(wav_scp.items())
                 wav_scp_list = [dict([wav_scp_items[ind] for ind in chunk]) for chunk in indices]
                 # multiprocessing
-                job_params = zip(wav_scp_list, repeat(self.extractors), sleeps, self.devices,
+                job_params = zip(wav_scp_list, self.extractors, sleeps, self.devices,
                                  repeat(self.model_hparams), list(range(self.n_processes)))
                 returns = process_map(extraction_job, job_params, max_workers=self.n_processes)
-                vectors = torch.concat([x[0].to(self.devices[0]) for x in returns], dim=0)
-                utts = [x[1] for x in returns]
-                utts = list(np.concatenate(utts))
+                # returns is a list of list of tuples (vectors, utts)
+                # first list: number of processes, second list: vector 
+                # and utt variables
+                vectors = torch.stack([vec.to(self.devices[0]) for returns_per_dev in returns for vec in returns_per_dev[0]], dim=0)
+                utts = [utt for elem in returns for utt in elem[1]]
             else:
                 vectors, utts = extraction_job([wav_scp, self.extractors[0], 0, self.devices[0], self.model_hparams, 0])
                 vectors = torch.stack(vectors, dim=0)
@@ -113,6 +123,9 @@ def extraction_job(data):
     wav_scp, speaker_extractors, sleep, device, model_hparams, job_id = data
     time.sleep(sleep)
 
+    # if n_processes > 1, this function is called in parallel
+    # therefore, we need to create the extractors for each process separately
+    # to avoid multiprocessing issues
     if speaker_extractors is None:
         speaker_extractors = create_extractors(hparams=model_hparams, device=device)
 

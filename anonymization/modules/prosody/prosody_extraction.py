@@ -1,4 +1,5 @@
 import logging
+import utils.logging
 import torch
 torch.set_num_threads(1)
 
@@ -49,7 +50,7 @@ class ProsodyExtraction:
             wav_scp = {utt: wav_scp[utt] for utt in unprocessed_utts}
 
         if wav_scp:
-            logger.info(f'Extract prosody for {len(wav_scp)} of {len(wav_scp) + len(data_prosody)} utterances')
+            logger.log(utils.logging.NOTICE, f'Extract prosody for {len(wav_scp)} of {len(wav_scp) + len(data_prosody)} utterances')
             data_prosody.new = True
             i = 0
             for utt, wav_path in tqdm(wav_scp.items()):
@@ -71,7 +72,7 @@ class ProsodyExtraction:
                 data_prosody.save_prosody(dataset_results_dir)
 
         elif len(data_prosody.utterances) > 0:
-            logger.info('No prosody extraction necessary; load stored values instead...')
+            logger.log(utils.logging.NOTICE, 'No prosody extraction necessary; load stored values instead...')
         else:
             logger.warn(f'No utterances could be found in {dataset_path}!')
 

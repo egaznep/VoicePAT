@@ -1,4 +1,5 @@
 import logging
+import utils.logging
 from pathlib import Path
 import numpy as np
 import torch
@@ -174,7 +175,7 @@ class PoolAnonymizer(BaseAnonymizer):
             vectors_a=self.pool_embeddings.vectors, vectors_b=speaker_embeddings.vectors
         )
 
-        logging.info(f"Anonymize embeddings of {len(speaker_embeddings)} speakers...")
+        logging.log(utils.logging.NOTICE, f"Anonymize embeddings of {len(speaker_embeddings)} speakers...")
         identifiers = []
         speakers = []
         anon_vectors = []

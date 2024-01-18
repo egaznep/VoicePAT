@@ -2,6 +2,7 @@ from tqdm import tqdm
 import soundfile
 import time
 import logging
+import utils.logging
 from torch.multiprocessing import Pool, set_start_method
 from itertools import repeat
 
@@ -15,21 +16,10 @@ class SpeechSynthesis:
 
     def __init__(self, devices, settings, model_dir=None, results_dir=None, save_output=True, force_compute=False):
         self.devices = devices
-        self.output_sr = settings.get('output_sr', 16000)
         self.save_output = save_output
         self.force_compute = force_compute if force_compute else settings.get('force_compute_synthesis', False)
 
-        synthesizer_type = settings.get('synthesizer', 'ims')
-        if synthesizer_type == 'ims':
-            hifigan_path = settings['hifigan_path']
-            fastspeech_path = settings['fastspeech_path']
-            embedding_path = settings.get('embeddings_path', None)
-
-            self.tts_models = []
-            for device in self.devices:
-                self.tts_models.append(ImsTTS(hifigan_path=hifigan_path, fastspeech_path=fastspeech_path,
-                                              embedding_path=embedding_path, device=device,
-                                              output_sr=self.output_sr, lang=settings.get('lang', 'en')))
+        self.tts_models = [None for device in range(len(devices))]
 
         if results_dir:
             self.results_dir = results_dir
@@ -40,6 +30,8 @@ class SpeechSynthesis:
         else:
             if self.save_output:
                 raise ValueError('Results dir must be specified in parameters or settings!')
+        self.hparams = settings
+        self.sleep = settings.get('sleep', 0)
 
     def synthesize_speech(self, dataset_name, texts, speaker_embeddings, prosody=None, emb_level='spk'):
         # depending on whether we save the generated audios to disk or not, we either return a dict of paths to the
@@ -53,7 +45,7 @@ class SpeechSynthesis:
                                         if wav_file.stem in texts.utterances}
 
             if len(already_synthesized_utts):
-                logger.info(f'No synthesis necessary for {len(already_synthesized_utts)} of {len(texts)} utterances...')
+                logger.log(utils.logging.NOTICE, f'No synthesis necessary for {len(already_synthesized_utts)} of {len(texts)} utterances...')
                 texts.remove_instances(list(already_synthesized_utts.keys()))
                 if self.save_output:
                     wavs = already_synthesized_utts
@@ -64,7 +56,7 @@ class SpeechSynthesis:
                         wavs[utt] = wav
 
         if texts:
-            logger.info(f'Synthesize {len(texts)} utterances...')
+            logger.log(utils.logging.NOTICE, f'Synthesize {len(texts)} utterances...')
             if self.force_compute or not dataset_results_dir.exists():
                 create_clean_dir(dataset_results_dir)
 
@@ -93,7 +85,7 @@ class SpeechSynthesis:
 
             else:
                 num_processes = len(self.tts_models)
-                sleeps = [10 * i for i in range(num_processes)]
+                sleeps = [self.sleep * i for i in range(num_processes)]
                 text_iterators = texts.get_iterators(n=num_processes)
 
                 instances = []
@@ -118,20 +110,45 @@ class SpeechSynthesis:
 
                 # multiprocessing
                 with Pool(processes=num_processes) as pool:
-                    job_params = zip(instances, self.tts_models, repeat(dataset_results_dir), sleeps,
+                    job_params = zip(instances, repeat(self.hparams), self.devices, self.tts_models, repeat(dataset_results_dir), sleeps,
                                      repeat(text_is_phones), repeat(self.save_output))
-                    new_wavs = pool.starmap(tqdm(synthesis_job), job_params)
+                    new_wavs = pool.starmap(synthesis_job, job_params)
 
                 for new_wav_dict in new_wavs:
                     wavs.update(new_wav_dict)
         return wavs
 
 
-def synthesis_job(instances, tts_model, out_dir, sleep, text_is_phones=False, save_output=False):
+def create_model_instance(hparams, device):
+    synthesizer_type = hparams.get('synthesizer', 'ims')
+    if synthesizer_type == 'ims':
+        hifigan_path = hparams['hifigan_path']
+        fastspeech_path = hparams['fastspeech_path']
+        embedding_path = hparams.get('embeddings_path', None)
+        lang = hparams.get('lang', 'en')
+
+    synthesizer = hparams.get('synthesizer')
+    if synthesizer == 'ims':
+        return ImsTTS(
+            hifigan_path=hifigan_path,
+            fastspeech_path=fastspeech_path,
+            embedding_path=embedding_path,
+            lang=lang,
+            output_sr=hparams.get('output_sr', 16000),
+            device=device,
+        )
+    else:
+        raise ValueError(f'Invalid synthesizer {synthesizer}!')
+
+def synthesis_job(instances, hparams, device, tts_model, out_dir, sleep, text_is_phones=False, save_output=False, job_id=0):
     time.sleep(sleep)
 
+    if tts_model is None:
+        tts_model = create_model_instance(hparams=hparams, device=device)
+
     wavs = {}
-    for text, utt, speaker_embedding, utt_prosody_dict in tqdm(instances):
+
+    for text, utt, speaker_embedding, utt_prosody_dict in tqdm(instances, desc=f'Job {job_id}', leave=True):
         wav = tts_model.read_text(text=text, speaker_embedding=speaker_embedding, text_is_phones=text_is_phones,
                                   **utt_prosody_dict)
 

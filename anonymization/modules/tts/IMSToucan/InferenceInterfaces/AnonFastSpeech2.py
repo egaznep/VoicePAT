@@ -1,6 +1,7 @@
 import itertools
 import os
 import logging
+import utils.logging
 
 import librosa.display as lbd
 import matplotlib.pyplot as plt
@@ -176,7 +177,7 @@ class AnonFastSpeech2(torch.nn.Module):
         for (text, durations, pitch, energy) in itertools.zip_longest(text_list, dur_list, pitch_list, energy_list):
             if text.strip() != "":
                 if not silent:
-                    logger.info("Now synthesizing: {}".format(text))
+                    logger.log(utils.logging.NOTICE, "Now synthesizing: {}".format(text))
                 if wav is None:
                     if durations is not None:
                         durations = durations.to(self.device)

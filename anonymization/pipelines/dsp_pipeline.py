@@ -8,6 +8,7 @@ This pipeline consists of:
 """
 from datetime import datetime
 import logging
+import utils.logging
 
 from pathlib import Path
 
@@ -46,7 +47,7 @@ class DSPPipeline(BasePipeline):
                 as value.
         """
         for i, (dataset_name, dataset_path) in enumerate(datasets.items()):
-            logger.info(f"{i + 1}/{len(datasets)}: Processing {dataset_name}...")
+            logger.log(utils.logging.NOTICE, f"{i + 1}/{len(datasets)}: Processing {dataset_name}...")
             process_data(
                 dataset_path=dataset_path,
                 anon_level=self.modules_config["anon_level"],
@@ -54,7 +55,7 @@ class DSPPipeline(BasePipeline):
                 results_dir=self.results_dir,
                 force_compute=force_compute,
             )
-        logger.info("Anonymization pipeline completed.")
+        logger.log(utils.logging.NOTICE, "Anonymization pipeline completed.")
 
         # save config
         now = datetime.strftime(datetime.today(), "%d-%m-%y_%H:%M")

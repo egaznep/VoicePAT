@@ -1,5 +1,5 @@
 root_dir : .
-data_dir: !ref <root_dir>/data #TODO adjust path, absolute path
+data_dir: ~/Projects/2022-voiceprivacychallenge/baseline/data
 save_intermediate: true
 save_output: true
 
@@ -21,6 +21,7 @@ modules:
     utt_start_token: "~"
     utt_end_token: "~#"
     results_path: !ref <results_dir>/transcription/asr_branchformer_tts-phn_en
+    sleep: 0
 
   speaker_embeddings:
     anonymizer: ims
@@ -35,6 +36,7 @@ modules:
       vec_type: !ref <modules[speaker_embeddings][vec_type]>
     extraction_results_path: !ref <results_dir>/original_speaker_embeddings/<modules[speaker_embeddings][vec_type]>_<modules[speaker_embeddings][emb_level]>-level
     anon_results_path: !ref <results_dir>/anon_speaker_embeddings/<modules[speaker_embeddings][vec_type]>_<modules[speaker_embeddings][emb_level]>-level
+    sleep: 0
 
     # pool_anon_settings are only used if anon_method == pool
     pool_anon_settings:
@@ -78,3 +80,4 @@ modules:
     embeddings_path: !ref <models_dir>/tts/Embedding/embedding_function.pt
     output_sr: 16000
     results_path: !ref <results_dir>/anon_speech/ims_sttts_pc
+    sleep: 0
