@@ -2,6 +2,7 @@ from shutil import copy
 import torchaudio
 import os
 from collections import defaultdict
+from pathlib import Path
 
 from utils import save_kaldi_format, create_clean_dir, read_kaldi_format
 
@@ -25,8 +26,9 @@ def get_anon_wav_scps(input_folder):
 
 def prepare_evaluation_data(dataset_dict, anon_wav_scps, anon_vectors_path, output_path, anon_suffix='_anon'):
     trials_subs = defaultdict(list)
+    anon_vectors_path = Path(anon_vectors_path).expanduser()
     for dataset, orig_dataset_path in dataset_dict.items():
-        for anon in {True, False}:
+        for anon in [True, False]:
             suffix = anon_suffix if anon else ''
             orig_data_path = orig_dataset_path.parent
             out_data_split = output_path / f'{dataset}{suffix}'
@@ -46,7 +48,7 @@ def prepare_evaluation_data(dataset_dict, anon_wav_scps, anon_vectors_path, outp
                 anon_vec_split = anon_vectors_path / f'{dataset}'
                 if dataset == 'train-clean-360':
                     spk2gender = read_kaldi_format(anon_vec_split / 'spk2gender')
-                    if '-' in list(spk2gender.keys())[0]:  # spk2gender contains utts as keys, not speakers
+                    if list(spk2gender.keys())[0].count('-') > 1:  # if spk2gender contains utts as keys (instead of speakers) fix this
                         utt2spk = read_kaldi_format(orig_dataset_path / 'utt2spk')
                         revised_spk2gender = {utt2spk[utt]: gender for utt, gender in spk2gender.items()}
                         save_kaldi_format(revised_spk2gender, out_data_split / 'spk2gender')

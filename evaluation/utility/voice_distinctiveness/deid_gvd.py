@@ -1,4 +1,5 @@
 import logging
+import utils.logging
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -16,14 +17,14 @@ logger = logging.getLogger(__name__)
 
 class VoiceDistinctiveness:
 
-    def __init__(self, spk_ext_model_dir, device, score_save_dir, plda_settings=None, distance='plda',
+    def __init__(self, spk_ext_model_dir, devices, score_save_dir, plda_settings=None, distance='plda',
                  vec_type='xvector', num_per_spk='all'):
         self.num_per_spk = num_per_spk
 
         self.extractor = SpeakerExtraction(results_dir=score_save_dir / 'emb_xvect',
-                                           devices=[device], settings={'vec_type': vec_type, 'emb_level': 'utt', 'emb_model_path': spk_ext_model_dir})
+                                           devices=devices, settings={'vec_type': vec_type, 'emb_level': 'utt', 'emb_model_path': spk_ext_model_dir})
 
-        self.asv = ASV(model_dir=spk_ext_model_dir, device=device, score_save_dir=score_save_dir, distance=distance,
+        self.asv = ASV(model_dir=spk_ext_model_dir, devices=devices, score_save_dir=score_save_dir, distance=distance,
                        plda_settings=plda_settings, vec_type=vec_type)
 
     def compute_voice_similarity_matrix(self, segments_dir_x, segments_dir_y, exp_name, out_dir):
@@ -100,7 +101,7 @@ class VoiceDistinctiveness:
             y = [(spk, utt) for spk, utt_list in spk2utt_y.items() for utt in utt_list]
 
         else:
-            logger.info("choose %d utterances for each spk to create trial" % int(self.num_per_spk))
+            logger.log(utils.logging.NOTICE, "choose %d utterances for each spk to create trial" % int(self.num_per_spk))
             x = [(spk, utt) for spk, utt_list in spk2utt_x.items()
                  for utt in random.sample(utt_list, k=min(self.num_per_spk, len(utt_list)))]
             y = [(spk, utt) for spk, utt_list in spk2utt_y.items()

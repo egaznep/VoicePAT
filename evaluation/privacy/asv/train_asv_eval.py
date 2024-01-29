@@ -36,6 +36,11 @@ def asv_train_speechbrain(train_params, output_dir):
         hparams['out_n_neurons'] = int(train_params['num_spk'])
 
     sb_run_opts = deepcopy(run_opts)
-    if torch.cuda.device_count() > 0:
-        sb_run_opts['data_parallel_backend'] = True
-    train_asv_speaker_embeddings(config, hparams, run_opts=sb_run_opts)
+    if torch.cuda.device_count() > 1:
+        sb_run_opts['distributed_launch'] = True
+        from torch.distributed.launcher.api import LaunchConfig, elastic_launch
+        # assuming single node
+        launch_config = LaunchConfig(min_nodes=1, max_nodes=1, nproc_per_node=torch.cuda.device_count(), rdzv_endpoint='localhost:0', rdzv_backend='c10d')
+        elastic_launch(launch_config, train_asv_speaker_embeddings)(config, hparams, sb_run_opts)
+    else:
+        train_asv_speaker_embeddings(config, hparams, run_opts=sb_run_opts)

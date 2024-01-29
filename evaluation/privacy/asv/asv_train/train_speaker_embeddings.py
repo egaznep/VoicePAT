@@ -1,5 +1,6 @@
 # This code is based on
 # https://github.com/speechbrain/speechbrain/blob/develop/recipes/VoxCeleb/SpeakerRec/train_speaker_embeddings.py
+import os
 import torch
 import speechbrain as sb
 from hyperpyyaml import load_hyperpyyaml
@@ -97,6 +98,11 @@ def _convert_to_yaml(overrides):
 
 
 def train_asv_speaker_embeddings(config_file, hparams_file, run_opts):
+    # force device arg to be the same as local_rank from torchrun
+    local_rank = os.environ.get("LOCAL_RANK")
+    if local_rank is not None and "cuda" in run_opts["device"]:
+        run_opts["device"] = run_opts["device"][:-1] + str(local_rank)
+
     # This flag enables the inbuilt cudnn auto-tuner
     torch.backends.cudnn.benchmark = True
 

@@ -4,21 +4,21 @@ from .asv import ASV
 from utils import find_asv_model_checkpoint
 
 
-def evaluate_asv(eval_datasets, eval_data_dir, params, device, anon_data_suffix, model_dir=None):
+def evaluate_asv(eval_datasets, eval_data_dir, params, devices, anon_data_suffix, model_dir=None):
     backend = params.get('backend', 'speechbrain').lower()
     if backend == 'speechbrain':
-        asv_eval_speechbrain(eval_datasets=eval_datasets, eval_data_dir=eval_data_dir, params=params, device=device,
+        asv_eval_speechbrain(eval_datasets=eval_datasets, eval_data_dir=eval_data_dir, params=params, devices=devices,
                              anon_data_suffix=anon_data_suffix, model_dir=model_dir)
     else:
         raise ValueError(f'Unknown backend {backend} for ASR evaluation. Available backends: speechbrain.')
 
 
-def asv_eval_speechbrain(eval_datasets, eval_data_dir, params, device, anon_data_suffix, model_dir=None):
+def asv_eval_speechbrain(eval_datasets, eval_data_dir, params, devices, anon_data_suffix, model_dir=None):
     model_dir = model_dir or find_asv_model_checkpoint(params['model_dir'])
     print(f'Use ASV model for evaluation: {model_dir}')
 
     save_dir = params['evaluation']['results_dir'] / f'{params["evaluation"]["distance"]}_out'
-    asv = ASV(model_dir=model_dir, device=device, score_save_dir=save_dir, distance=params['evaluation']['distance'],
+    asv = ASV(model_dir=model_dir, devices=devices, score_save_dir=save_dir, distance=params['evaluation']['distance'],
               plda_settings=params['evaluation']['plda'], vec_type=params['vec_type'])
 
     attack_scenarios = ['oo', 'oa', 'aa']

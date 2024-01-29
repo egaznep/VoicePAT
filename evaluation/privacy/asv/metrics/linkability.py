@@ -1,4 +1,5 @@
 import logging
+import utils.logging
 import numpy as np
 
 from .utils.visualization import draw_linkability_scores
@@ -22,7 +23,7 @@ def compute_linkability(score_file, key_file, omega=1.0, use_draw_scores=False, 
             output_file = "linkability_" + score_file
         draw_linkability_scores(mated_scores, non_mated_scores, Dsys, D, bin_centers, bin_edges, str(output_file))
 
-    logger.info("linkability: %f" % (Dsys))
+    logger.log(utils.logging.NOTICE, "linkability: %f" % (Dsys))
 
 
 def linkability(mated_scores, non_mated_scores, omega=1):

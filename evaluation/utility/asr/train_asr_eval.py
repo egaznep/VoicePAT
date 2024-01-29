@@ -23,7 +23,7 @@ def asr_train_speechbrain(train_params):
         'data_folder': str(train_params['train_data_dir']),
         'output_folder': str(train_params['model_dir']),
         'pretrained_path': str(train_params['pretrained_model']),
-        'train_splits': [train_params['train_splits']]
+        'train_splits': [train_params['train_splits']],
     }
 
     config = train_params['train_config']
@@ -41,15 +41,14 @@ def asr_train_speechbrain(train_params):
     'tqdm_colored_bar': False
 }
 
-    # force device arg to be the same as local_rank from torchrun
-    local_rank = os.environ.get("LOCAL_RANK")
-    if local_rank is not None and "cuda" in run_opts["device"]:
-        run_opts["device"] = run_opts["device"][:-1] + str(local_rank)
-
-
     sb_run_opts = deepcopy(run_opts)
-    if torch.cuda.device_count() > 0:
-        sb_run_opts['data_parallel_backend'] = True
-    train_speechbrain_asr(config, hparams, run_opts=sb_run_opts)
+    if torch.cuda.device_count() > 1:
+        sb_run_opts['distributed_launch'] = True
+        from torch.distributed.launcher.api import LaunchConfig, elastic_launch
+        # assuming single node
+        launch_config = LaunchConfig(min_nodes=1, max_nodes=1, nproc_per_node=torch.cuda.device_count(), rdzv_endpoint='localhost:0', rdzv_backend='c10d')
+        elastic_launch(launch_config, train_speechbrain_asr)(config, hparams, sb_run_opts)
+    else:
+        train_speechbrain_asr(config, hparams, run_opts=sb_run_opts)
 
 

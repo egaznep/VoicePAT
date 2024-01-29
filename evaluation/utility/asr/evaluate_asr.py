@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 
 import logging
+import utils.logging
 logger = logging.getLogger(__name__)
 
 import torch.multiprocessing
@@ -34,7 +35,7 @@ def asr_eval_speechbrain(eval_datasets, eval_data_dir, params, model_path, anon_
         for test_set in test_sets:
             data_path = eval_data_dir / test_set
             if (results_dir / test_set / 'wer').exists() and (results_dir / test_set / 'text').exists():
-                logger.info("No WER computation  necessary; print exsiting WER results")
+                logger.log(utils.logging.NOTICE, "No WER computation  necessary; print exsiting WER results")
                 hypotheses = read_kaldi_format(Path(data_path, 'text'), values_as_string=True)
                 references = read_kaldi_format(Path(results_dir, test_set, 'text'), values_as_string=True)
                 scores = model.compute_wer(ref_texts=references, hyp_texts=hypotheses, out_file=Path(results_dir,test_set, 'wer'))

@@ -1,30 +1,27 @@
 # We need to set CUDA_VISIBLE_DEVICES before we import Pytorch so we will read all arguments directly on startup
+import itertools
 import logging
-import os
-from argparse import ArgumentParser
-from collections import defaultdict
-from pathlib import Path
-import pandas as pd
-from typing import List
+import utils.logging
 import multiprocessing
-parser = ArgumentParser()
-parser.add_argument('--config', default='config_eval.yaml')
-parser.add_argument('--gpu_ids', default='0')
-args = parser.parse_args()
-logger = logging.getLogger(__name__)
-from datetime import datetime
-
-if 'CUDA_VISIBLE_DEVICES' not in os.environ:  # do not overwrite previously set devices
-    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_ids
-
+import os
+import pandas as pd
+import shutil
 import torch
 import time
-import shutil
-import itertools
+import typer
+
+from argparse import ArgumentParser
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+from typing import Annotated, Optional
 
 from evaluation import evaluate_asv, train_asv_eval, evaluate_asr, train_asr_eval, evaluate_gvd
 from utils import parse_yaml, find_asv_model_checkpoint, scan_checkpoint, combine_asr_data, split_vctk_into_common_and_diverse, get_datasets, prepare_evaluation_data, get_anon_wav_scps
+
+logger = logging.getLogger(__name__)
+
+multiprocessing.set_start_method('spawn', force=True)
 
 def get_evaluation_steps(params):
     eval_steps = {}
@@ -56,7 +53,7 @@ def get_eval_trial_datasets(datasets_list):
     return eval_pairs
 
 
-def check_vctk_split(data_trials, eval_data_dir, anon_suffix):
+def check_vctk_split(data_trials, orig_data_dir, eval_data_dir, anon_suffix):
     copy_files_for_orig = ['spk2utt', 'text', 'utt2spk', 'trials', 'spk2gender', 'wav.scp', 'utt2dur']
     copy_files_for_anon = ['spk2utt', 'text', 'utt2spk', 'trials']
     separated_data_trials = []
@@ -65,14 +62,14 @@ def check_vctk_split(data_trials, eval_data_dir, anon_suffix):
         if 'vctk' in trial and '_all' in trial:
             common_split = trial.replace('all', 'common')  # same sentences for all speakers
             diverse_split = trial.replace('_all', '')  # different sentences for each speaker
-            if (not Path(eval_data_dir, common_split).exists() or \
-                    not Path(eval_data_dir, diverse_split).exists()):
-                split_vctk_into_common_and_diverse(dataset=trial, output_path=eval_data_dir, orig_data_path=eval_data_dir,
+            if (not Path(orig_data_dir, common_split).exists() or \
+                    not Path(orig_data_dir, diverse_split).exists()):
+                split_vctk_into_common_and_diverse(dataset=trial, output_path=orig_data_dir, orig_data_path=orig_data_dir,
                                                    copy_files=copy_files_for_orig, anon=False, anon_suffix=f'{anon_suffix}',
                                                    out_data_split=Path(eval_data_dir, trial))
             if not Path(eval_data_dir, f'{common_split}{anon_suffix}').exists() or \
                 not Path(eval_data_dir, f'{diverse_split}{anon_suffix}').exists():
-                split_vctk_into_common_and_diverse(dataset=trial, output_path=eval_data_dir, orig_data_path=eval_data_dir,
+                split_vctk_into_common_and_diverse(dataset=trial, output_path=eval_data_dir, orig_data_path=orig_data_dir,
                                                    copy_files=copy_files_for_anon, anon=True, anon_suffix=f'{anon_suffix}',
                                                    out_data_split = Path(eval_data_dir, f'{trial}{anon_suffix}'))
             separated_data_trials.append((enroll, common_split))
@@ -119,34 +116,90 @@ def get_eval_asr_datasets(datasets_list, eval_data_dir, anon_suffix):
 
     return list(eval_data)
 
+def main(
+    anon_data_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to the results directory. Contents should be in /{dataset_name}/wav.scp. Evaluation",
+        ),
+    ] = None,
+    eval_data_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to the results directory.",
+        ),
+    ] = None,
+    config: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to the config file.",
+        ),
+    ] = "configs/eval_config.yaml",
+    gpu_ids: Annotated[
+        str,
+        typer.Option(
+            help="Comma separated list of GPU ids to use.",
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            '--verbose', '-v',
+            help="If given, sets logging level to DEBUG.",
+        ),
+    ] = False,
+):
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else utils.logging.NOTICE,
+        format="%(asctime)s - Evaluation:%(name)s- %(levelname)s - %(message)s",
+    )
 
-if __name__ == '__main__':
-    multiprocessing.set_start_method("fork",force=True)
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s- %(levelname)s - %(message)s')
+    overrides = {}
+    if anon_data_dir is not None:
+        overrides['anon_data_dir'] = str(anon_data_dir.expanduser())
+        overrides['eval_data_dir'] = None # supplying anon_data_dir is sufficient
+    if eval_data_dir is not None:
+        overrides['eval_data_dir'] = str(eval_data_dir.expanduser())
 
-    params = parse_yaml(Path('configs', args.config))
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    params = parse_yaml(Path(config), overrides=overrides)
 
-    eval_data_dir = params['eval_data_dir']
+    gpus = gpu_ids.split(",")
+    devices = []
+    if torch.cuda.is_available():
+        if 'CUDA_VISIBLE_DEVICES' not in os.environ:  # do not overwrite previously set devices
+            os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+            os.environ['CUDA_VISIBLE_DEVICES'] = gpu_ids
+        for gpu in gpus:
+            devices.append(torch.device(f"cuda:{gpu}"))
+    else:
+        devices.append(torch.device("cpu"))
+    logging.log(utils.logging.NOTICE, f'Using devices: {devices}')
+    device = devices[0] # for blocks that can utilize a single device only
+
     anon_suffix = params['anon_data_suffix']
+    now = datetime.strftime(datetime.today(), "%d-%m-%y_%H:%M")
+    if params['eval_data_dir'] is None:
+        eval_data_dir = params['exp_dir'] / anon_data_dir.parent.name / 'formatted_data' / now
+        # reload the config with the created eval_data_dir
+        overrides['eval_data_dir'] = str(eval_data_dir)
+        params = parse_yaml(Path(config), overrides=overrides)
     eval_steps = get_evaluation_steps(params)
 
     if "anon_data_dir" in params:
         logger.info("Preparing datadir according to the Kaldi format.")
         orig_datasets = get_datasets(params['data_dir'], params['anon_datasets'])
         anon_wav_scps = get_anon_wav_scps(params['anon_data_dir'])
-        output_path = params['exp_dir'] / 'formatted_data' / now
+        anon_pairs = get_eval_trial_datasets(params['anon_datasets'])
         prepare_evaluation_data(
-            dataset_dict=datasets,
+            dataset_dict=orig_datasets,
             anon_wav_scps=anon_wav_scps,
             anon_vectors_path=params['data_dir'],
             anon_suffix='_' + anon_suffix,
-            output_path=output_path,
+            output_path=eval_data_dir,
         )
-        eval_data_dir = output_path
 
     eval_data_trials = get_eval_trial_datasets(params['datasets'])
-    eval_data_trials = check_vctk_split(eval_data_trials, eval_data_dir=eval_data_dir, anon_suffix='_'+anon_suffix)
+    eval_data_trials = check_vctk_split(eval_data_trials, orig_data_dir=params['data_dir'], eval_data_dir=eval_data_dir, anon_suffix='_'+anon_suffix)
     eval_data_asr = get_eval_asr_datasets(params['datasets'], eval_data_dir=eval_data_dir, anon_suffix=anon_suffix)
 
     # make sure given paths exist
@@ -160,18 +213,18 @@ if __name__ == '__main__':
                 asv_train_params = asv_params['training']
                 if not model_dir.exists() or asv_train_params.get('retrain', True) is True:
                     start_time = time.time()
-                    logging.info('Perform ASV training')
+                    logging.log(utils.logging.NOTICE, 'Perform ASV training')
                     train_asv_eval(train_params=asv_train_params, output_dir=asv_params['model_dir'])
-                    logging.info("ASV training time: %f min ---" % (float(time.time() - start_time) / 60))
+                    logging.log(utils.logging.NOTICE, "ASV training time: %f min ---" % (float(time.time() - start_time) / 60))
                     model_dir = scan_checkpoint(model_dir, 'CKPT')
                     shutil.copy('evaluation/privacy/asv/asv_train/hparams/ecapa/hyperparams.yaml', params['privacy']['asv']['model_dir'])
 
             if 'evaluation' in asv_params:
-                logging.info('Perform ASV evaluation')
+                logging.log(utils.logging.NOTICE, 'Perform ASV evaluation')
                 start_time = time.time()
                 evaluate_asv(eval_datasets=eval_data_trials, eval_data_dir=eval_data_dir, params=asv_params,
-                             device=device,  model_dir=model_dir, anon_data_suffix=anon_suffix)
-                logging.info("--- EER computation time: %f min ---" % (float(time.time() - start_time) / 60))
+                             devices=devices,  model_dir=model_dir, anon_data_suffix=anon_suffix)
+                logging.log(utils.logging.NOTICE, "--- EER computation time: %f min ---" % (float(time.time() - start_time) / 60))
 
     if 'utility' in eval_steps:
         if 'asr' in eval_steps['utility']:
@@ -184,8 +237,6 @@ if __name__ == '__main__':
             if 'training' in asr_params:
                 asr_train_params = asr_params['training']
                 model_dir = asr_train_params['model_dir']
-                if "anon_libri_360" in params:
-                    asr_train_params['train_data_dir'] = output_path
                 if not model_dir.exists() or asr_train_params.get('retrain', True) is True:
                     start_time = time.time()
                     print('Perform SpeechBrain ASR training')
@@ -215,7 +266,10 @@ if __name__ == '__main__':
         if 'gvd' in eval_steps['utility']:
             gvd_params = params['utility']['gvd']
             start_time = time.time()
-            logging.info('Perform GVD evaluation')
+            logging.log(utils.logging.NOTICE, 'Perform GVD evaluation')
             evaluate_gvd(eval_datasets=eval_data_trials, eval_data_dir=eval_data_dir, params=gvd_params,
-                         device=device, anon_data_suffix=anon_suffix)
-            logging.info("--- GVD  computation time: %f min ---" % (float(time.time() - start_time) / 60))
+                         devices=devices, anon_data_suffix=anon_suffix)
+            logging.log(utils.logging.NOTICE, "--- GVD  computation time: %f min ---" % (float(time.time() - start_time) / 60))
+
+if __name__ == "__main__":
+    typer.run(main)

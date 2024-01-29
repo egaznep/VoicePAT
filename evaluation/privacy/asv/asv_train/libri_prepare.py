@@ -2,6 +2,7 @@
 # https://github.com/speechbrain/speechbrain/blob/develop/recipes/VoxCeleb/voxceleb_prepare.py
 import csv
 import logging
+import utils.logging
 import random
 from pathlib import Path
 import sys  # noqa F401
@@ -14,6 +15,7 @@ from speechbrain.dataio.dataio import (
     load_pkl,
     save_pkl,
 )
+from utils import read_kaldi_format
 
 logger = logging.getLogger(__name__)
 OPT_FILE = "opt_libri_prepare.pkl"
@@ -101,7 +103,7 @@ def prepare_libri(
 
     # Check if this phase is already done (if so, skip it)
     if skip(splits, save_folder, conf):
-        logger.info("Skipping preparation, completed in previous run.")
+        logger.log(utils.logging.NOTICE, "Skipping preparation, completed in previous run.")
         return
 
     # Additional checks to make sure the data folder contains VoxCeleb data
@@ -113,7 +115,7 @@ def prepare_libri(
     # _check_voxceleb1_folders(data_folder, splits)
 
     msg = "\tCreating csv file for the Libri Dataset.."
-    logger.info(msg)
+    logger.log(utils.logging.NOTICE, msg)
 
     # Split data into 90% train and 10% validation (verification split)
     wav_lst_train, wav_lst_dev = _get_utt_split_lists(
@@ -194,20 +196,36 @@ def _get_utt_split_lists(
         spk_files = {}
         spks_pure = []
         full_utt = 0
-        for f in data_folder.glob(f'**/*.{suffix}'):
-            # temp = f.split("/")[-1].split(".")[0]
-            temp = f.stem
-            used_id = "-".join(temp.split('-')[-3:-1])
-            spk_id = temp.split('-')[0]
-            if spk_id not in spks_pure:
-                spks_pure.append(spk_id)
-                
-            if used_id not in spk_files:
-                spk_files[used_id] = []
-            if f not in spk_files[used_id]:
-                full_utt += 1
-                spk_files[used_id].append(str(f.absolute()))
-        
+        # if audio files are in subfolders directly read them
+        if len(list(data_folder.glob(f'**/*.{suffix}'))):
+            for f in data_folder.glob(f'**/*.{suffix}'):
+                # temp = f.split("/")[-1].split(".")[0]
+                temp = f.stem
+                used_id = "-".join(temp.split('-')[-3:-1])
+                spk_id = temp.split('-')[0]
+                if spk_id not in spks_pure:
+                    spks_pure.append(spk_id)
+                    
+                if used_id not in spk_files:
+                    spk_files[used_id] = []
+                if f not in spk_files[used_id]:
+                    full_utt += 1
+                    spk_files[used_id].append(str(f.absolute()))
+        else:
+            # open via wav.scp
+            wav_scp = read_kaldi_format(data_folder / 'wav.scp')            
+            for key, value in wav_scp.items():
+                temp = key.split("-")
+                used_id = "-".join(temp[-3:-1])
+                spk_id = temp[0]
+                if spk_id not in spks_pure:
+                    spks_pure.append(spk_id)
+                if used_id not in spk_files:
+                    spk_files[used_id] = []
+                if key not in spk_files[used_id]:
+                    full_utt += 1
+                    spk_files[used_id].append(value)
+
         selected_list = []
         selected_spk = {}
         #select the number of speakers
@@ -228,7 +246,7 @@ def _get_utt_split_lists(
         if num_utt != 'ALL':
             # select the number of utterances for each speaker-sess-id
             if utt_selected_ways == 'spk-sess':
-                logger.info("selected %s utterances for each selected speaker-sess-id" % num_utt)
+                logger.log(utils.logging.NOTICE, "selected %s utterances for each selected speaker-sess-id" % num_utt)
                 for spk in selected_spk:
                     if len(selected_spk[spk]) >= int(num_utt):
                         selected_list.extend(random.sample(selected_spk[spk], int(num_utt)))
@@ -236,7 +254,7 @@ def _get_utt_split_lists(
                         selected_list.extend(selected_spk[spk])
 
             elif utt_selected_ways == 'spk-random':
-                logger.info("randomly selected %s utterances for each selected speaker-id" % num_utt)
+                logger.log(utils.logging.NOTICE, "randomly selected %s utterances for each selected speaker-id" % num_utt)
                 selected_spks_pure = {}
                 for k, v in selected_spk.items():
                     spk_pure = k.split('-')[0]
@@ -253,7 +271,7 @@ def _get_utt_split_lists(
                         selected_list.extend(selected_spk[spk])
 
             elif utt_selected_ways == 'spk-diverse-sess':
-                logger.info("diversely selected %s utterances for each selected speaker-id" % num_utt)
+                logger.log(utils.logging.NOTICE, "diversely selected %s utterances for each selected speaker-id" % num_utt)
                 selected_spks_pure = {}
                 for k, v in selected_spk.items():
                     spk_pure = k.split('-')[0]
@@ -273,7 +291,7 @@ def _get_utt_split_lists(
 
 
         elif num_utt == 'ALL':
-            logger.info("selected all utterances for each selected speaker")
+            logger.log(utils.logging.NOTICE, "selected all utterances for each selected speaker")
 
             for value in selected_spk.values():
                 for v in value:
@@ -346,7 +364,7 @@ def prepare_csv(seg_dur, wav_lst, csv_file, random_segment=False, amp_th=0):
     """
 
     msg = f'\t"Creating csv lists in  {csv_file}..."'
-    logger.info(msg)
+    logger.log(utils.logging.NOTICE, msg)
 
     csv_output = [["ID", "duration", "wav", "start", "stop", "spk_id"]]
 
@@ -361,7 +379,7 @@ def prepare_csv(seg_dur, wav_lst, csv_file, random_segment=False, amp_th=0):
             temp = wav_file.split("/")[-1].split(".")[0]
             [spk_id, sess_id, utt_id] = temp.split('-')[-3:]
         except ValueError:
-            logger.info(f"Malformed path: {wav_file}")
+            logger.log(utils.logging.NOTICE, f"Malformed path: {wav_file}")
             continue
         audio_id = my_sep.join([spk_id, sess_id, utt_id.split(".")[0]])
 
@@ -369,7 +387,7 @@ def prepare_csv(seg_dur, wav_lst, csv_file, random_segment=False, amp_th=0):
         try:
             audio_duration = sf.info(wav_file).duration
             #signal, fs = torchaudio.load(wav_file)
-        except RuntimeError:
+        except RuntimeError as e:
             problematic_wavs.append(wav_file)
             continue
         #signal = signal.squeeze(0)
@@ -417,7 +435,7 @@ def prepare_csv(seg_dur, wav_lst, csv_file, random_segment=False, amp_th=0):
                 ]
                 entry.append(csv_line)
 
-    logger.info(f'Skipped {len(problematic_wavs)} invalid audios')
+    logger.log(utils.logging.NOTICE, f'Skipped {len(problematic_wavs)} invalid audios')
     csv_output = csv_output + entry
 
     # Writing the csv lines

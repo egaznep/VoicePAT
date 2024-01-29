@@ -1,4 +1,5 @@
 import logging
+import utils.logging
 import numpy as np
 from scipy.special import expit
 
@@ -17,9 +18,9 @@ def compute_cllr(score_file, key_file, compute_eer=False):
     else:
         cllr_min = min_cllr(tar, non)
 
-    logger.info("Cllr (min/act): %.3f/%.3f" % (cllr_min, cllr_act))
+    logger.log(utils.logging.NOTICE, "Cllr (min/act): %.3f/%.3f" % (cllr_min, cllr_act))
     if compute_eer:
-        logger.info("ROCCH-EER: %2.3f%%" % (100*eer))
+        logger.log(utils.logging.NOTICE, "ROCCH-EER: %2.3f%%" % (100*eer))
 
 
 def cllr(tar_llrs, nontar_llrs):

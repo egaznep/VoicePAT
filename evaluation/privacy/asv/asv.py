@@ -1,6 +1,7 @@
 # This code is partly based on
 # https://github.com/speechbrain/speechbrain/blob/develop/recipes/VoxCeleb/SpeakerRec/speaker_verification_plda.py
 import logging
+import utils.logging
 from pathlib import Path
 import torch
 from speechbrain.utils.metric_stats import EER
@@ -15,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 class ASV:
 
-    def __init__(self, model_dir, device, score_save_dir, distance='plda', plda_settings=None, vec_type='xvector'):
-        self.device = device
+    def __init__(self, model_dir, devices, score_save_dir, distance='plda', plda_settings=None, vec_type='xvector'):
+        self.devices = devices
         self.vec_type = vec_type
         self.model_dir = model_dir
         self.score_save_dir = score_save_dir
@@ -34,7 +35,7 @@ class ASV:
             self.plda_anon = None
 
         self.extractor = SpeakerExtraction(results_dir=self.score_save_dir / 'emb_xvect',
-                                           devices=[self.device],
+                                           devices=self.devices,
                                            settings={'vec_type': vec_type, 'emb_level': 'utt', 'emb_model_path': model_dir})
 
     def compute_trial_scores(self, trials, enrol_indices, test_indices, out_file, sim_scores):
@@ -140,7 +141,7 @@ class ASV:
             if self.plda_model_dir.exists():
                 self.plda = PLDAModel(train_embeddings=None, results_path=self.plda_model_dir)
             else:
-                logger.info('Train PLDA model...')
+                logger.log(utils.logging.NOTICE, 'Train PLDA model...')
 
                 plda_data_dir = self.plda_train_data_dir
                 if self.plda_anon:
@@ -148,7 +149,7 @@ class ASV:
                     self.select_data_for_plda(all_data_dir=self.plda_train_data_dir,
                                               selected_data_dir=self.model_dir.parent,
                                               out_dir=plda_data_dir)
-                logger.info(f'Using data under {plda_data_dir}')
+                logger.log(utils.logging.NOTICE, f'Using data under {plda_data_dir}')
 
                 train_dict = self.extractor.extract_speakers(dataset_path=plda_data_dir, emb_level='utt')
                 self.plda = PLDAModel(train_embeddings=train_dict, results_path=self.plda_model_dir)

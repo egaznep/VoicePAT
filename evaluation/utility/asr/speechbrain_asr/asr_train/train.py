@@ -37,6 +37,7 @@ import os
 import sys
 import torch
 import logging
+import utils.logging
 from pathlib import Path
 import speechbrain as sb
 from hyperpyyaml import load_hyperpyyaml
@@ -402,6 +403,11 @@ def dataio_prepare(hparams):
     )
 
 def train_speechbrain_asr(config_file, hparams_file, run_opts):
+    # force device arg to be the same as local_rank from torchrun
+    local_rank = os.environ.get("LOCAL_RANK")
+    if local_rank is not None and "cuda" in run_opts["device"]:
+        run_opts["device"] = run_opts["device"][:-1] + str(local_rank)
+
     # This flag enables the inbuilt cudnn auto-tuner
     torch.backends.cudnn.benchmark = True
 

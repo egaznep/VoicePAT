@@ -4,7 +4,7 @@ from .deid_gvd import VoiceDistinctiveness
 from utils import find_asv_model_checkpoint
 
 
-def evaluate_gvd(eval_datasets, eval_data_dir, params, device, anon_data_suffix):
+def evaluate_gvd(eval_datasets, eval_data_dir, params, devices, anon_data_suffix):
 
     def get_similarity_matrix(vd_model, out_dir, exp_name, segments_folder):
         if (out_dir / f'similarity_matrix_{exp_name}.npy').exists() and not recompute:
@@ -20,7 +20,7 @@ def evaluate_gvd(eval_datasets, eval_data_dir, params, device, anon_data_suffix)
     recompute = params.get('recompute', False)
 
     vd_settings = {
-        'device': device,
+        'devices': devices,
         'plda_settings': params['asv_params']['evaluation']['plda'],
         'distance': params['asv_params']['evaluation']['distance'],
         'vec_type': params['asv_params']['vec_type'],
@@ -52,6 +52,7 @@ def evaluate_gvd(eval_datasets, eval_data_dir, params, device, anon_data_suffix)
                          'one "orig_model_dir" and one "anon_model_dir"!')
 
     for _, trial in eval_datasets:
+        print(f'Evaluate GVD for trial {trial}')
         osp_set_folder = eval_data_dir / trial
         psp_set_folder = eval_data_dir / f'{trial}_{anon_data_suffix}'
         trial_out_dir = save_dir / trial

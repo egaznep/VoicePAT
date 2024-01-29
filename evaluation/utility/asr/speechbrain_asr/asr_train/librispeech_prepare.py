@@ -15,6 +15,7 @@ from collections import Counter
 from dataclasses import dataclass
 import functools
 import logging
+import utils.logging
 from speechbrain.utils.data_utils import download_file, get_all_files
 from speechbrain.dataio.dataio import (
     load_pkl,
@@ -103,10 +104,10 @@ def prepare_librispeech(
 
     # Check if this phase is already done (if so, skip it)
     if skip(splits, save_folder, conf):
-        logger.info("Skipping preparation, completed in previous run.")
+        logger.log(utils.logging.NOTICE, "Skipping preparation, completed in previous run.")
         return
     else:
-        logger.info("Data_preparation...")
+        logger.log(utils.logging.NOTICE, "Data_preparation...")
 
     # Additional checks to make sure the data folder contains Librispeech
     check_librispeech_folders(data_folder, splits)
@@ -124,11 +125,11 @@ def prepare_librispeech(
         wav_file_temp = Path(data_folder + '/' + split + '/wav.scp')
         
         if wav_file_temp.exists():
-            logger.info(" %s/wav.scp exists, use wav.scp to create csv " % data_folder)
+            logger.log(utils.logging.NOTICE, " %s/wav.scp exists, use wav.scp to create csv " % data_folder)
             with open(wav_file_temp, 'r') as file:
                 wav_lst = [line.split()[1] for line in file]
         else:
-            logger.info(" %s/wav.scp is not exist, find audio files under the folder to create csv " % data_folder)
+            logger.log(utils.logging.NOTICE, " %s/wav.scp is not exist, find audio files under the folder to create csv " % data_folder)
             wav_lst = get_all_files(
             os.path.join(data_folder, split), match_and=[SUFFIX]
             )
@@ -186,7 +187,7 @@ def create_lexicon_and_oov_csv(all_texts, data_folder, save_folder):
     lexicon_path = os.path.join(save_folder, "librispeech-lexicon.txt")
 
     if not os.path.isfile(lexicon_path):
-        logger.info(
+        logger.log(utils.logging.NOTICE, 
             "Lexicon file not found. Downloading from %s." % lexicon_url
         )
         download_file(lexicon_url, lexicon_path)
@@ -224,7 +225,7 @@ def create_lexicon_and_oov_csv(all_texts, data_folder, save_folder):
                 ",".join([str(idx), str(duration), graphemes, phonemes]) + "\n"
             )
             f.write(line)
-    logger.info("Lexicon written to %s." % lexicon_csv_path)
+    logger.log(utils.logging.NOTICE, "Lexicon written to %s." % lexicon_csv_path)
 
     # Split lexicon.csv in train, validation, and test splits
     split_lexicon(save_folder, [98, 1, 1])
@@ -330,12 +331,12 @@ def create_csv(
     # Setting path for the csv file
     csv_file = os.path.join(save_folder, split + ".csv")
     if os.path.exists(csv_file):
-        logger.info("Csv file %s already exists, not recreating." % csv_file)
+        logger.log(utils.logging.NOTICE, "Csv file %s already exists, not recreating." % csv_file)
         return
 
     # Preliminary prints
     msg = "Creating csv lists in  %s..." % (csv_file)
-    logger.info(msg)
+    logger.log(utils.logging.NOTICE, msg)
 
     csv_lines = [["ID", "duration", "wav", "spk_id", "wrd"]]
 
@@ -377,7 +378,7 @@ def create_csv(
 
     # Final print
     msg = "%s successfully created!" % (csv_file)
-    logger.info(msg)
+    logger.log(utils.logging.NOTICE, msg)
 
 
 def skip(splits, save_folder, conf):
