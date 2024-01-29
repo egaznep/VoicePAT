@@ -73,8 +73,7 @@ def process_data(dataset_path: Path, anon_level: str, settings: dict, results_di
     if force_compute:
         shutil.rmtree(output_path)
     if not output_path.exists():
-        # start off with a copy of the original dataset
-        shutil.copytree(dataset_path, output_path)
+        output_path.mkdir(parents=True)
 
     # generate the folder for the dataset we are processing
     output_path.mkdir(exist_ok=True)
