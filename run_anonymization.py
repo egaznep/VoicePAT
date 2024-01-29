@@ -47,7 +47,7 @@ def main(
     )
     
     config = parse_yaml(Path(config))
-    datasets = get_datasets(config)
+    datasets = get_datasets(config["data_dir"], config["datasets"])
     if gpu_ids is not None:
         gpus = gpu_ids.split(",")
 

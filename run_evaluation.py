@@ -133,8 +133,7 @@ if __name__ == '__main__':
 
     if "anon_data_dir" in params:
         logger.info("Preparing datadir according to the Kaldi format.")
-        now = datetime.strftime(datetime.today(), "%d-%m-%y_%H:%M")
-        datasets = get_datasets(params)
+        orig_datasets = get_datasets(params['data_dir'], params['anon_datasets'])
         anon_wav_scps = get_anon_wav_scps(params['anon_data_dir'])
         output_path = params['exp_dir'] / 'formatted_data' / now
         prepare_evaluation_data(

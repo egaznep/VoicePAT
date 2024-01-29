@@ -3,6 +3,8 @@ import shutil
 import os
 import glob
 
+from typing import List, Dict
+
 
 def create_clean_dir(dir_name:Path):
     if dir_name.exists():
@@ -43,20 +45,20 @@ def find_asv_model_checkpoint(model_dir):
     return model_dir
 
 
-def get_datasets(config):
-    datasets = {}
-    data_dir = config.get('data_dir', Path('')).expanduser() # if '~' is given in path then manually expand
-    for dataset in config['datasets']:
+def get_datasets(data_dir: Path, datasets: List[Dict[str, dict]]):
+    parsed_datasets: Dict[str, Path] = {}
+    data_dir = data_dir.expanduser() # if '~' is given in path then manually expand
+    for dataset in datasets:
         subsets = dataset['enrolls'] + dataset['trials']
         if len(subsets):
             for subset in dataset['enrolls'] + dataset['trials']:
                 dataset_name = f'{dataset["data"]}_{dataset["set"]}_{subset}'
-                datasets[dataset_name] = Path(data_dir, dataset_name)
+                parsed_datasets[dataset_name] = data_dir / dataset_name
         else:
             dataset_name = f'{dataset["data"]}'
-            datasets[dataset_name] = Path(data_dir, dataset_name)
+            parsed_datasets[dataset_name] = data_dir / dataset_name
     # ensure their existence
-    for dataset, dataset_path in datasets.items():
+    for dataset, dataset_path in parsed_datasets.items():
         assert dataset_path.exists(), f'Dataset {dataset} is not found in {dataset_path.absolute()}'
-    return datasets
+    return parsed_datasets
 
