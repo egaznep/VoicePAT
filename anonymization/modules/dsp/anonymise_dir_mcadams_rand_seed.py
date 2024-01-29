@@ -26,7 +26,7 @@ from itertools import repeat
 from kaldiio import ReadHelper
 from pathlib import Path
 from tqdm import tqdm
-from utils.data_io import get_kaldi_entry_count
+from utils.data_io import get_kaldi_entry_count, read_kaldi_format, force_kaldi_entries_as_path
 
 multiprocessing.set_start_method('fork', force=True)
 
@@ -78,15 +78,17 @@ def process_data(dataset_path: Path, anon_level: str, settings: dict, results_di
     # generate the folder for the dataset we are processing
     output_path.mkdir(exist_ok=True)
     
-    with ReadHelper(f'scp:{wav_scp}') as reader:
-        # get the number of utterances in the dataset
-        N = get_kaldi_entry_count(wav_scp)
-        #for utid, (freq, samples) in tqdm(reader, total=N):
-        mp = multiprocessing.Pool(processes=(multiprocessing.cpu_count()+1)//2)
-        mp.starmap(process_wav, tqdm(zip(reader, repeat(utt2spk), repeat(settings), repeat(anon_level), repeat(output_path)), total=N), chunksize=10)
+    wavs = read_kaldi_format(wav_scp, return_as_dict=True)
+    wavs = force_kaldi_entries_as_path(wavs)
+    # get the number of utterances in the dataset
+    N = get_kaldi_entry_count(wav_scp)
+    #for utid, (freq, samples) in tqdm(reader, total=N):
+    mp = multiprocessing.Pool(processes=(multiprocessing.cpu_count()+1)//2)
+    mp.starmap(process_wav, tqdm(zip(wavs.items(), repeat(utt2spk), repeat(settings), repeat(anon_level), repeat(output_path)), total=N), chunksize=10)
 
 def process_wav(data, utt2spk, settings, anon_level, output_path):
-    utid, (freq, samples) = data
+    (utid, path) = data
+    freq, samples = librosa.load(path, sr=None)
     output_file = output_path / f'{utid}.wav'
     if output_file.exists():
         logger.debug(f'File {output_file} already exists')

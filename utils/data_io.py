@@ -5,11 +5,18 @@ import pandas as pd
 import logging
 import utils.logging
 
+from typing import Dict
+
 logger = logging.getLogger(__name__)
 
 def get_kaldi_entry_count(path: Path):
     with open(path, 'r') as f:
         return len(f.readlines())
+    
+def force_kaldi_entries_as_path(dict: Dict[str, list[str]]):
+    for key in dict:
+        dict[key] = [Path(x) for x in dict[key] if Path(x).suffix in ['.wav', '.flac']]
+    return dict
 
 def read_kaldi_format(filename, return_as_dict=True, values_as_string=False):
     key_list = []
@@ -69,7 +76,7 @@ def save_kaldi_format(data, filename):
 
 def parse_yaml(filename, overrides=None):
     with open(filename, 'r') as f:
-        config = load_hyperpyyaml(f, overrides=overrides)
+        config = load_hyperpyyaml(f, overrides=overrides, overrides_must_match=False)
 
     # tranform strings denoting paths into pathlib.Path instances
     config = _transform_paths(config)
