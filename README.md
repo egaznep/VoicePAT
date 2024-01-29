@@ -71,15 +71,15 @@ eval_data_dir: path to anonymized evaluation data in Kaldi-format
 Running an evaluation pipeline could be done like this:
 
 ```bash
-python run_evaluation.py --config=configs/eval_pre_ecapa_cos.yaml --gpu_ids 1,2,3
+python run_evaluation.py --config=configs/eval_pre.yaml --gpu-ids 1,2,3
 # OR
-python run_evaluation.py --config=configs/eval_pre_ecapa_cos.yaml --gpu_ids 1,2,3 path/to/anonymized/data/in/KALDI/format # given path overrides the eval_data_dir specified in the .yaml config
+python run_evaluation.py --config=configs/eval_pre.yaml --gpu-ids 1,2,3 path/to/anonymized/data/in/KALDI/format # given path overrides the eval_data_dir specified in the .yaml config
 ```
 
 The latter also allows piping the anonymization and the evaluation in the following way:
 
 ```bash
-python run_anonymization.py --config=configs/eval_pre_ecapa_cos.yaml --gpu_ids 1,2,3 |python run_evaluation.py --config=configs/eval_pre_ecapa_cos.yaml --gpu_ids 1,2,3
+python run_anonymization.py --config=configs/anon_ims_sttts_pc.yaml --gpu-ids 1,2,3 | tail -n 1 | xargs python run_evaluation.py --config=configs/eval_pre.yaml --gpu-ids 1,2,3
 ```
 
 Pretrained models for evaluation are downloaded by `make pretrained_eval_models`
