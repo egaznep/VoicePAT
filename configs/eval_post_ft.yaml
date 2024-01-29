@@ -9,8 +9,10 @@ eval_steps:  # all metrics in this list will be computed in the evaluation. Remo
   utility:
     - asr
     - gvd
-
+data_dir: data
+eval_data_dir: !PLACEHOLDER # either change here or override in command line
 anon_data_suffix: anon  # suffix for dataset to signal that it is anonymized
+anon_datasets: !include:datasets_vpc2022_official_anon.yaml
 
 privacy:
   asv:

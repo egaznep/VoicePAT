@@ -9,8 +9,10 @@ eval_steps:  # all metrics in this list will be computed in the evaluation. Remo
   utility:
     - asr
     - gvd
-
-anon_data_suffix: anon  # suffix for dataset to signal that it is anonymized
+data_dir: data
+eval_data_dir: !PLACEHOLDER # either change here or override in command line
+anon_data_suffix: anon  # suffix for dataset to indicate that it is anonymized
+anon_datasets: !include:datasets_vpc2022_official_anon.yaml
 
 privacy:
   asv:
@@ -19,7 +21,7 @@ privacy:
 
     training:
       anon: true  # true or false, depending on whether the training data for the ASV is anonymized or original
-      train_data_dir: !ref <eval_data_dir>/train-clean-360-asv_dsp # path to original or anonymized training data for ASV
+      train_data_dir: !ref <eval_data_dir>/train-clean-360-asv_<anon_data_suffix> # path to original or anonymized training data for ASV
       train_config: evaluation/privacy/asv/asv_train/hparams/train_ecapa_tdnn_small.yaml
       finetuning: false # true (ft) or false (scratch)
       pretrained_model: null # path to pretrained model, only used for finetuning
