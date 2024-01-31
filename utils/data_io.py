@@ -16,7 +16,7 @@ def get_kaldi_entry_count(path: Path):
 def force_kaldi_entries_as_path(dict: Dict[str, list[str]]):
     for key in dict:
         if type(dict[key]) == list:
-            dict[key] = [Path(x) for x in dict[key] if Path(x).suffix in ['.wav', '.flac']][0]
+            dict[key] = [x for x in dict[key] if Path(x).suffix in ['.wav', '.flac']][0]
         elif type(dict[key]) == str:
             pass
         else:

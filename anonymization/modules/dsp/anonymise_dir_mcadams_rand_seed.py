@@ -5,6 +5,7 @@
 Audio Security and Privacy Group, EURECOM
 modified version (N.T.)
 """
+import functools
 import hashlib
 import itertools
 import librosa
@@ -20,15 +21,18 @@ import random
 import scipy
 import scipy.signal
 import shutil
+import soundfile
+import time
 import wave
 
+from copy import deepcopy
 from itertools import repeat
 from kaldiio import ReadHelper
 from pathlib import Path
 from tqdm import tqdm
 from utils.data_io import get_kaldi_entry_count, read_kaldi_format, force_kaldi_entries_as_path
 
-multiprocessing.set_start_method('fork', force=True)
+multiprocessing.set_start_method('spawn', force=True)
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,6 @@ def process_data(dataset_path: Path, anon_level: str, settings: dict, results_di
             results_dir (Path): Path to directory where results should be stored
             force_compute (bool): If True, existing results will be overwritten
     """
-    rng = np.random.default_rng(2024)
     utt2spk = None
     if anon_level == 'spk':
         utt2spk = load_utt2spk( dataset_path / 'utt2spk')
@@ -82,24 +85,32 @@ def process_data(dataset_path: Path, anon_level: str, settings: dict, results_di
     wavs = force_kaldi_entries_as_path(wavs)
     # get the number of utterances in the dataset
     N = get_kaldi_entry_count(wav_scp)
-    #for utid, (freq, samples) in tqdm(reader, total=N):
-    mp = multiprocessing.Pool(processes=(multiprocessing.cpu_count()+1)//2)
-    mp.starmap(process_wav, tqdm(zip(wavs.items(), repeat(utt2spk), repeat(settings), repeat(anon_level), repeat(output_path)), total=N), chunksize=10)
+    # make the query beforehand
+    if anon_level == 'spk':
+        spids = map(lambda x: utt2spk[x], wavs.keys())
+    else:
+        spids = repeat(None)
+    with multiprocessing.Pool(processes=(multiprocessing.cpu_count()+1)//2) as pool: # number of processes can be tuned
+        fn = functools.partial(process_wav, settings=settings, anon_level=anon_level, output_path=str(output_path))
+        val = pool.starmap(fn, tqdm(zip(spids, wavs.items()), total=N), chunksize=10)
+    print('Done')
 
-def process_wav(data, utt2spk, settings, anon_level, output_path):
+def process_wav(spid, data, settings, anon_level, output_path):
+    output_path = Path(output_path)
     (utid, path) = data
-    freq, samples = librosa.load(path, sr=None)
+    samples, freq = soundfile.read(path)
     output_file = output_path / f'{utid}.wav'
     if output_file.exists():
         logger.debug(f'File {output_file} already exists')
         return
 
     # convert from int16 to float
-    samples = samples / (np.iinfo(np.int16).max + 1)
+    if samples.dtype == np.int16:
+        samples = samples / (np.iinfo(np.int16).max + 1)
     
+    rng = np.random.default_rng(2024)
     if anon_level == 'spk':
-        assert utid in utt2spk, f'Failed to find speaker ID for utterance {utid}'
-        spid = utt2spk[utid]
+        assert spid is not None, f'Failed to find speaker ID for utterance {utid}'
         # make sure same generator is used for each utterance if
         # spk-level anonymization is used
         rng = np.random.default_rng(hash_textstring(spid))
