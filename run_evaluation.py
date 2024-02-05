@@ -89,7 +89,7 @@ def check_anon_dir(datasets_list, eval_data_dir, anon_suffix):
 
     return True
 
-def get_eval_asr_datasets(datasets_list, eval_data_dir, anon_suffix):
+def get_eval_asr_datasets(datasets_list, orig_data_dir, eval_data_dir, anon_suffix):
     # combines the trial subsets (trial_f, trial_m) of each dataset into one asr dataset
     eval_data = set()
 
@@ -97,22 +97,25 @@ def get_eval_asr_datasets(datasets_list, eval_data_dir, anon_suffix):
     # collect all parts together to create one asr dataset for the whole instead of for each subpart
     collated_datasets = defaultdict(list)
     for dataset in datasets_list:
-        asr_dataset_name = f'{dataset["data"]}_{dataset["set"]}_asr'
-        collated_datasets[asr_dataset_name].append(dataset)
+        asr_dataset = f'{dataset["data"]}_{dataset["set"]}_asr'
+        collated_datasets[asr_dataset].append(dataset)
 
-    for asr_dataset_name, datasets in collated_datasets.items():
-        for asr_dataset in (asr_dataset_name, f'{asr_dataset_name}_{anon_suffix}'): # for orig and anon
-            if not Path(eval_data_dir / asr_dataset).exists():
-                trial_dirs = []
-                for dataset in datasets:
-                    for trial in dataset['trials']:
-                        if anon_suffix in asr_dataset:
-                            trial_dirs.append(Path(eval_data_dir / f'{dataset["data"]}_{dataset["set"]}_{trial}_{anon_suffix}'))
-                        else:
-                            trial_dirs.append(Path(eval_data_dir / f'{dataset["data"]}_{dataset["set"]}_{trial}'))
+    for asr_dataset, datasets in collated_datasets.items():
+        if not Path(orig_data_dir / asr_dataset).exists():
+            trial_dirs = []
+            for dataset in datasets:
+                for trial in dataset['trials']:
+                    trial_dirs.append(Path(orig_data_dir / f'{dataset["data"]}_{dataset["set"]}_{trial}'))
+                output_dir = Path(orig_data_dir / asr_dataset)
+                combine_asr_data(input_dirs=trial_dirs, output_dir=output_dir)
+        if not Path(eval_data_dir / f'{asr_dataset}_{anon_suffix}').exists():
+            trial_dirs = []
+            for dataset in datasets:
+                for trial in dataset['trials']:
+                    trial_dirs.append(Path(eval_data_dir / f'{dataset["data"]}_{dataset["set"]}_{trial}'))
                 output_dir = Path(eval_data_dir / asr_dataset)
                 combine_asr_data(input_dirs=trial_dirs, output_dir=output_dir)
-        eval_data.add(asr_dataset_name)
+        eval_data.add(asr_dataset)
 
     return list(eval_data)
 
@@ -189,7 +192,6 @@ def main(
         logger.info("Preparing datadir according to the Kaldi format.")
         orig_datasets = get_datasets(params['data_dir'], params['anon_datasets'])
         anon_wav_scps = get_anon_wav_scps(params['anon_data_dir'])
-        anon_pairs = get_eval_trial_datasets(params['anon_datasets'])
         prepare_evaluation_data(
             dataset_dict=orig_datasets,
             anon_wav_scps=anon_wav_scps,
@@ -200,7 +202,7 @@ def main(
 
     eval_data_trials = get_eval_trial_datasets(params['datasets'])
     eval_data_trials = check_vctk_split(eval_data_trials, orig_data_dir=params['data_dir'], eval_data_dir=eval_data_dir, anon_suffix='_'+anon_suffix)
-    eval_data_asr = get_eval_asr_datasets(params['datasets'], eval_data_dir=eval_data_dir, anon_suffix=anon_suffix)
+    eval_data_asr = get_eval_asr_datasets(params['datasets'], orig_data_dir=params['data_dir'], eval_data_dir=eval_data_dir, anon_suffix=anon_suffix)
 
     # make sure given paths exist
     assert eval_data_dir.exists(), f'{eval_data_dir} does not exist'
